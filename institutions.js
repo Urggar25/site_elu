@@ -93,16 +93,27 @@ function plan() {
   const selected=proposals.items.filter(p=>choices.has(p.id));
   const existingIds=new Set(institutions().map(x=>x.id));
   const byTown=new Set(institutions().map(x=>cleanTown(x.city)));
-  const changes=[], created=[], conflicts=[];
+  const changes=[], created=[], newPeople=[], conflicts=[];
+  const usedContactIds=new Set((adminState.localContacts||[]).map(c=>c.id));
   const byId=new Map((adminState.localContacts||[]).map(x=>[x.id,x]));
   const changed=new Map();
   for(const p of selected) {
     if(byTown.has(p.town)){conflicts.push(p.city+" : mairie déjà enregistrée");continue;}
+    if(p.reason && /plusieurs/i.test(p.reason)){conflicts.push(p.city+" : correspondance ambiguë");continue;}
     const legacy=byId.get(p.id);
     if(!legacy) continue;
-    const person=p.personId ? byId.get(p.personId) : null;
+    let person=p.personId ? byId.get(p.personId) : null;
     if(p.personId && (!person || person.id===legacy.id || person.entityType==="institution")) {
       conflicts.push(p.city+" : personne associée invalide"); continue;
+    }
+    if(!person && legacy.firstName && (legacy.lastName || legacy.usageName)) {
+      // Separate a single institutional mayor record without losing the real person.
+      person=normalizeContactRecord({
+        firstName:legacy.firstName,lastName:legacy.lastName||legacy.usageName,
+        city:legacy.city,category:"maire",keywords:["maire"],
+        entityType:"person",mandates:[],institutionId:""
+      },usedContactIds);
+      newPeople.push(person);
     }
     const entry=newInstitution(legacy,person?.id||"",existingIds);
     existingIds.add(entry.id);
@@ -120,11 +131,14 @@ function plan() {
       }
       const pkw=values(person);
       if(!pkw.some(x=>norm(x)==="maire")) pkw.push("maire");
-      changed.set(person.id,{...person,entityType:"person",institutionId:entry.id,
-        mandates,keywords:pkw,updatedAt:new Date().toISOString()});
+      const nextPerson={...person,entityType:"person",institutionId:entry.id,
+        mandates,keywords:pkw,updatedAt:new Date().toISOString()};
+      if(newPeople.some(p=>p.id===person.id)) {
+        newPeople[newPeople.findIndex(p=>p.id===person.id)]=nextPerson;
+      } else changed.set(person.id,nextPerson);
     }
   }
-  return {created,changed:[...changed.values()],conflicts,selected:selected.length};
+  return {created,newPeople,changed:[...changed.values()],conflicts,selected:selected.length};
 }
 function renderMigration() {
   if(!proposals) refresh();
@@ -151,7 +165,7 @@ function renderMigration() {
           <small>${escape(p.evidence.join(", "))} · ${p.personId ? "Personne correspondante : "+escape(display((adminState.localContacts||[]).find(c=>c.id===p.personId)||{})) : "Aucune personne correspondante"}</small>
           ${p.reason ? `<em>À examiner : ${escape(p.reason)}</em>` : '<em>Correspondance probable</em>'}
         </span></label>`).join("") || "<p>Aucune fiche candidate détectée.</p>"}</div>
-      <p><strong>Prévisualisation :</strong> ${current.created.length} institution(s) et ${current.changed.length} fiche(s) à actualiser.
+      <p><strong>Prévisualisation :</strong> ${current.created.length} institution(s), ${current.newPeople.length} personne(s) à créer et ${current.changed.length} fiche(s) à actualiser.
         ${current.conflicts.length ? escape(current.conflicts.join(" · ")) : ""}</p>
       <button type="button" class="primary-action" data-institution-apply ${busy||!current.created.length||!isAdmin()?"disabled":""}>Confirmer la migration sélectionnée</button>
     </section>
@@ -196,7 +210,7 @@ async function persistMigration() {
   const previousState=cloneAdminState();
   busy=true;
   const replace=new Map(action.changed.map(x=>[x.id,x]));
-  adminState.localContacts=adminState.localContacts.map(c=>replace.get(c.id)||c);
+  adminState.localContacts=adminState.localContacts.map(c=>replace.get(c.id)||c).concat(action.newPeople);
   adminState.institutions=[...institutions(),...action.created];
   try{
     const ok=await saveAdminStateToDatabaseOnly("migration","migration institution",action.created.length+" mairies",previousState);
