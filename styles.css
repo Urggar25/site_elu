@@ -11313,3 +11313,27 @@ body.admin-mode .calendar-event strong { display: block; }
 body.admin-mode .calendar-contact-fieldset { margin: 0; }
 body.admin-mode .calendar-contact-info { min-width: 0; }
 body.admin-mode .calendar-contact-channels a { display: inline-block; }
+
+/* Catégories d'événements : la couleur du fond et de la bordure provient de la catégorie. */
+body.admin-mode .calendar-event.is-categorized,
+body.admin-mode .calendar-month-event.is-categorized {
+  background: color-mix(in srgb, var(--calendar-category-color) 19%, white);
+  border-left-color: var(--calendar-category-color);
+  color: #172b44;
+}
+body.admin-mode .calendar-toolbar .calendar-manage-categories { justify-self: end; }
+.calendar-category-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: .5rem .8rem; align-items: center; }
+.calendar-category-legend > span { display: inline-flex; align-items: center; gap: .35rem; color: #45566c; font-size: .82rem; }
+.calendar-category-legend i,.calendar-category-dot { width: .8rem; height: .8rem; flex: 0 0 auto; display: inline-block; border-radius: 50%; }
+.calendar-categories-manager { border: 1px solid #d4dfea; background: white; border-radius: 12px; padding: .9rem; margin: .5rem .7rem 1rem; display: grid; gap: .85rem; }
+.calendar-categories-manager header { display: flex; gap: 1rem; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.calendar-categories-manager header h3 { margin: 0; }
+.calendar-categories-list { display: grid; gap: .45rem; }
+.calendar-category-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .4rem .5rem; border: 1px solid #e1e6ef; border-radius: 9px; }
+.calendar-category-row strong { flex: 1; min-width: 110px; }
+.calendar-category-form { display: flex; flex-wrap: wrap; gap: .65rem; align-items: end; }
+.calendar-category-form label { display: grid; gap: .25rem; flex: 1 1 150px; }
+.calendar-category-form input[type="color"] { min-height: 38px; padding: .1rem; min-width: 65px; max-width: 105px; cursor: pointer; }
+.calendar-recurrence-until[hidden] { display: none !important; }
+.calendar-series-note { padding: .6rem; border-radius: 8px; color: #435875 !important; background: #f0f6ff; font-size: .85rem !important; }
+@media (max-width: 850px) { body.admin-mode .calendar-toolbar .calendar-manage-categories { justify-self: start; } }
