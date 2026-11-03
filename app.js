@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-contact-keywords-and-or-v1";
+const ASSET_VERSION = "20261103-campaign-major-events-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -47,7 +47,8 @@ const adminMenu = {
       id: "campaign",
       label: "Campagne",
       items: [
-        ["campaign-terrain", "Terrain", "map"]
+        ["campaign-terrain", "Terrain", "map"],
+        ["campaign-events", "Événements", "calendar"]
       ]
     },
     {
@@ -245,6 +246,7 @@ function defaultAdminState() {
     teamTasks: [],
     calendarEvents: [],
     calendarEventCategories: [],
+    campaignEvents: [],
     teamFolders: [{ id: "team-folder-general", name: "Suivi general", description: "Dossiers et actions suivis par l'equipe.", createdAt: now, updatedAt: now }],
     templates: [],
     documents: [],
@@ -265,7 +267,7 @@ function defaultAdminState() {
     activityLog: [],
     campaign: { geojson: null, fileName: "", assignments: {}, importedAt: "" },
     photoLibrary: { folders: [], photos: [] },
-    mobileAdminMenu: ["dashboard", "contacts", "trombinoscope", "calendar", "permanence", "death", "special-letters", "documents", "mail-templates", "mail-campaigns", "homepage", "content", "photo-library", "campaign-terrain", "mobile-menu", "map-settings"]
+    mobileAdminMenu: ["dashboard", "contacts", "trombinoscope", "calendar", "campaign-events", "permanence", "death", "special-letters", "documents", "mail-templates", "mail-campaigns", "homepage", "content", "photo-library", "campaign-terrain", "mobile-menu", "map-settings"]
   };
 }
 
@@ -417,6 +419,7 @@ function normalizeAdminState(value) {
     permanenceRequests,
     teamTasks,
     calendarEvents,
+    campaignEvents: normalizeCampaignMajorEvents(value.campaignEvents).map((event) => ({...event, participants: event.participants.map((participant) => ({...participant, contactId: remapContactId(participant.contactId)}))})),
     calendarEventCategories: normalizeCalendarEventCategories(value.calendarEventCategories),
     teamFolders,
     localFolders,
@@ -471,7 +474,7 @@ function allAdminMenuItems() {
 function normalizeMobileAdminMenu(value) {
   const allowed = new Set(allAdminMenuItems().map(([id]) => id));
   const fallback = defaultAdminState().mobileAdminMenu;
-  const essentialItems = ["dashboard", "permanence", "death", "special-letters", "documents"];
+  const essentialItems = ["dashboard", "permanence", "death", "special-letters", "documents", "campaign-events"];
   return [...new Set([...essentialItems, ...(Array.isArray(value) ? value : fallback).map(String)].filter((id) => allowed.has(id)))];
 }
 
@@ -790,6 +793,195 @@ function exportCalendarAttendance(eventId, day) {
   const filename = "participants-" + slugify(item.title || "evenement") + "-" + day + ".xlsx";
   downloadFile(filename, participantWorkbookBytes([headers, ...rows]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   showToast(entries.length + " participant(s) exporté(s) vers Excel.");
+}
+
+
+function normalizeCampaignMajorEvents(items) {
+  return (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object" && item.id).map((item) => {
+    const seen = new Set();
+    return {
+      id: String(item.id), title: String(item.title || "").slice(0, 180),
+      startAt: String(item.startAt || "").slice(0, 16), endAt: String(item.endAt || "").slice(0, 16),
+      location: String(item.location || "").slice(0, 240), description: String(item.description || "").slice(0, 12000),
+      calendarEventId: String(item.calendarEventId || ""),
+      participants: (Array.isArray(item.participants) ? item.participants : []).filter((entry) => {
+        const id = String(entry?.contactId || "");
+        if (!id || seen.has(id)) return false;
+        seen.add(id); return true;
+      }).map((entry) => ({contactId: String(entry.contactId), status: ["attended","absent"].includes(entry.status) ? entry.status : "registered"})),
+      createdAt: String(item.createdAt || ""), updatedAt: String(item.updatedAt || "")
+    };
+  }).slice(0, 1000);
+}
+let selectedCampaignMajorEventId = "";
+let campaignMajorEventSearchText = "";
+
+function campaignMajorEventStats(item = {}) {
+  const rows = item.participants || [];
+  const attended = rows.filter((row) => row.status === "attended").length;
+  const absent = rows.filter((row) => row.status === "absent").length;
+  return {registered: rows.length, attended, absent, pending: rows.length - attended - absent};
+}
+function campaignMajorEventRecord(id) {
+  return (adminState.campaignEvents || []).find((entry) => entry.id === id) || null;
+}
+function campaignMajorEventCalendarRecord(event) {
+  return (adminState.calendarEvents || []).find((entry) => entry.id === event?.calendarEventId && entry.campaignEventId === event?.id) || null;
+}
+function renderCampaignMajorEventDetail(event) {
+  if (!event) return '<section class="campaign-major-placeholder">Sélectionnez un événement ou créez-en un nouveau.</section>';
+  const fresh = !event.id;
+  const stats = campaignMajorEventStats(event);
+  const linked = campaignMajorEventCalendarRecord(event);
+  return `<section class="campaign-major-detail">
+    <header><h3>${fresh ? "Créer un événement" : text(event.title)}</h3>${!fresh ? `<button class="secondary-action danger compact" type="button" data-campaign-major-delete="${attr(event.id)}">Supprimer</button>` : ""}</header>
+    <form class="admin-form campaign-major-form" data-campaign-major-save="${attr(event.id || "new")}">
+      <label>Nom de l'événement <input name="title" maxlength="180" required value="${attr(event.title || "")}" placeholder="Réunion publique, cérémonie, rencontre…" /></label>
+      <div class="campaign-major-dates">
+        <label>Début <input type="datetime-local" name="startAt" required value="${attr(event.startAt || "")}" /></label>
+        <label>Fin <input type="datetime-local" name="endAt" required value="${attr(event.endAt || "")}" /></label>
+      </div>
+      <label>Lieu <input name="location" maxlength="240" value="${attr(event.location || "")}" /></label>
+      <label>Description <textarea name="description" rows="4" maxlength="12000">${text(event.description || "")}</textarea></label>
+      <button class="primary-action" type="submit">Enregistrer l'événement</button>
+    </form>
+    ${!fresh ? `<div class="campaign-major-calendar">
+      <div><strong>Agenda (facultatif)</strong><p>${linked ? "Cet événement est lié à une entrée de l'agenda." : "Cet événement n'apparaît pas dans l'agenda."}</p></div>
+      ${linked ? `<button class="secondary-action compact" type="button" data-campaign-major-open-calendar="${attr(event.id)}">Ouvrir dans l'agenda</button><button class="secondary-action compact" type="button" data-campaign-major-unlink-calendar="${attr(event.id)}">Retirer de l'agenda</button>` :
+      `<button class="secondary-action compact" type="button" data-campaign-major-link-calendar="${attr(event.id)}">Ajouter à l'agenda</button>`}
+    </div>
+    <section class="campaign-major-attendance" data-campaign-major-attendance="${attr(event.id)}">
+      <header><h3>Participants</h3><button class="secondary-action compact" type="button" data-campaign-major-export="${attr(event.id)}">Exporter Excel (.xlsx)</button></header>
+      <div class="campaign-major-stats">
+        <div><strong>${stats.registered}</strong><small>Ont indiqué vouloir venir</small></div>
+        <div><strong>${stats.attended}</strong><small>Sont venus</small></div>
+        <div><strong>${stats.absent}</strong><small>Ne sont pas venus</small></div>
+        <div><strong>${stats.pending}</strong><small>En attente de confirmation</small></div>
+      </div>
+      <label>Inscrire un contact <input type="search" data-campaign-major-search autocomplete="off" placeholder="Rechercher par nom, prénom, commune, téléphone…" value="${attr(campaignMajorEventSearchText)}" /></label>
+      <div class="campaign-major-search-results" data-campaign-major-results>${renderCampaignMajorContactResults(event, campaignMajorEventSearchText)}</div>
+      <div class="campaign-major-participants">${(event.participants || []).map((row) => {
+        const contact = contactById(row.contactId);
+        return `<div class="campaign-major-participant">
+          <button type="button" data-campaign-major-contact="${attr(row.contactId)}">${text(contact ? contactDisplayName(contact) : "Contact supprimé")}</button>
+          <small>${text([contact?.city, contact?.mobile || contact?.phone, contact?.email].filter(Boolean).join(" · "))}</small>
+          <label><input type="checkbox" data-campaign-major-status="${attr(row.contactId)}" value="attended" ${row.status === "attended" ? "checked" : ""}/> Est venu</label>
+          <label><input type="checkbox" data-campaign-major-status="${attr(row.contactId)}" value="absent" ${row.status === "absent" ? "checked" : ""}/> N'est pas venu</label>
+          <button type="button" class="secondary-action compact danger" data-campaign-major-remove="${attr(row.contactId)}">Retirer</button>
+        </div>`;
+      }).join("") || '<p>Aucun participant inscrit.</p>'}</div>
+    </section>` : '<p>Enregistrez cet événement avant d’y ajouter des participants ou de le lier à l’agenda.</p>'}
+  </section>`;
+}
+function renderCampaignMajorContactResults(event, query) {
+  if (!query || query.trim().length < 2) return "<small>Saisissez au moins deux caractères.</small>";
+  const excluded = (event.participants || []).map((row) => row.contactId);
+  const matches = searchContacts(query, {limit: 12, excludeIds: excluded});
+  return matches.map((contact) => `<button type="button" data-campaign-major-add="${attr(contact.id)}"><strong>${text(contactDisplayName(contact))}</strong><small>${text([contact.city, contact.mobile, contact.email].filter(Boolean).join(" · "))}</small></button>`).join("") || '<small>Aucun contact trouvé.</small>';
+}
+function renderCampaignMajorEvents() {
+  const events = [...(adminState.campaignEvents || [])].sort((a,b) => String(b.startAt).localeCompare(String(a.startAt)));
+  const selected = selectedCampaignMajorEventId === "new" ? {id:"",title:"",startAt:"",endAt:"",location:"",description:"",participants:[]} :
+    campaignMajorEventRecord(selectedCampaignMajorEventId) || null;
+  return `<div class="campaign-major-page">
+    <header class="campaign-major-heading"><div><h2>Événements de campagne</h2><p>Inscriptions et émargements indépendants du calendrier.</p></div>
+      <button class="primary-action" type="button" data-campaign-major-new>+ Créer un événement</button></header>
+    <div class="campaign-major-columns">
+      <section class="campaign-major-list">${events.map((event) => {
+        const stats = campaignMajorEventStats(event);
+        return `<button type="button" class="campaign-major-card ${selected?.id === event.id ? "is-active" : ""}" data-campaign-major-open="${attr(event.id)}"><strong>${text(event.title)}</strong>
+          <small>${text(formatDate(event.startAt))} ${text(String(event.startAt).slice(11,16))} · ${text(event.location || "Lieu à préciser")}</small>
+          <span>${stats.registered} inscrit(s) · ${stats.attended} venu(s)${campaignMajorEventCalendarRecord(event) ? " · 📅 Agenda" : ""}</span>
+        </button>`;
+      }).join("") || '<p>Aucun événement créé.</p>'}</section>
+      ${renderCampaignMajorEventDetail(selected)}
+    </div>
+  </div>`;
+}
+function saveCampaignMajorEvent(form) {
+  const data = new FormData(form);
+  const title = String(data.get("title") || "").trim().slice(0,180);
+  const startAt = String(data.get("startAt") || ""), endAt = String(data.get("endAt") || "");
+  const start = new Date(startAt), end = new Date(endAt);
+  if (!title || !startAt || !endAt || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    showToast("Vérifiez le titre et les dates : la fin doit être après le début."); return;
+  }
+  const previous = campaignMajorEventRecord(form.dataset.campaignMajorSave);
+  const now = new Date().toISOString();
+  const item = {id:previous?.id || crypto.randomUUID(), title, startAt, endAt,
+    location:String(data.get("location") || "").trim().slice(0,240), description:String(data.get("description") || "").slice(0,12000),
+    calendarEventId: previous?.calendarEventId || "", participants:previous?.participants || [],
+    createdAt:previous?.createdAt || now, updatedAt:now};
+  adminState.campaignEvents = previous ? adminState.campaignEvents.map((entry) => entry.id === item.id ? item : entry) : [item, ...(adminState.campaignEvents || [])];
+  const linked = campaignMajorEventCalendarRecord(item);
+  if (linked) {
+    linked.title = item.title; linked.startAt = item.startAt; linked.endAt = item.endAt;
+    linked.location = item.location; linked.body = item.description; linked.updatedAt = now;
+  }
+  selectedCampaignMajorEventId = item.id;
+  campaignMajorEventSearchText = "";
+  saveAdminState(previous ? "modification" : "creation", "evenement majeur campagne", item.title);
+}
+function changeCampaignMajorParticipation(eventId, contactId, operation) {
+  const item = campaignMajorEventRecord(eventId);
+  if (!item) return;
+  if (operation === "add") {
+    if (!contactById(contactId) || item.participants.some((row) => row.contactId === contactId)) return;
+    item.participants.push({contactId, status:"registered"});
+  } else if (operation === "remove") {
+    item.participants = item.participants.filter((row) => row.contactId !== contactId);
+  } else if (["registered", "attended", "absent"].includes(operation)) {
+    const row = item.participants.find((entry) => entry.contactId === contactId);
+    if (!row) return;
+    row.status = operation;
+  } else return;
+  item.updatedAt = new Date().toISOString();
+  campaignMajorEventSearchText = "";
+  saveAdminState("participants", "evenement majeur campagne", item.title);
+}
+function exportCampaignMajorParticipants(id) {
+  const event = campaignMajorEventRecord(id);
+  if (!event) return;
+  const header = ["Prénom","Nom","Commune","Téléphone","Mail","Présence"];
+  const rows = event.participants.map((row) => {
+    const contact = contactById(row.contactId) || {};
+    return [contact.firstName || "", contact.lastName || contact.usageName || "", contact.city || "",
+      contact.mobile || contact.phone || "", contact.email || "", row.status === "attended" ? "Est venu" : row.status === "absent" ? "N'est pas venu" : "À confirmer"];
+  });
+  downloadFile("participants-campagne-"+slugify(event.title)+"-"+event.startAt.slice(0,10)+".xlsx",
+    participantWorkbookBytes([header,...rows]),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  showToast(event.participants.length+" participant(s) exporté(s).");
+}
+function linkCampaignMajorCalendar(id) {
+  const event = campaignMajorEventRecord(id);
+  if (!event || campaignMajorEventCalendarRecord(event)) return;
+  const now = new Date().toISOString(), calendarId = crypto.randomUUID();
+  adminState.calendarEvents.unshift({
+    id:calendarId, campaignEventId:event.id, title:event.title, startAt:event.startAt, endAt:event.endAt,
+    location:event.location, body:event.description, color:"blue", categoryId:"", recurrence:"none", recurrenceUntil:"",
+    contactIds:[], assignedUserIds:[], attendanceByDate:{},
+    createdBy:currentUserId, createdByName:userNameById(currentUserId) || currentUser()?.login || "Équipe",
+    createdAt:now,updatedAt:now
+  });
+  event.calendarEventId = calendarId;
+  saveAdminState("liaison agenda", "evenement majeur campagne", event.title);
+}
+function unlinkCampaignMajorCalendar(id) {
+  const event = campaignMajorEventRecord(id);
+  const linked = campaignMajorEventCalendarRecord(event);
+  if (!event || !linked || !confirm("Retirer cet événement de l'agenda ? La fiche de campagne et ses participants seront conservés.")) return;
+  adminState.calendarEvents = adminState.calendarEvents.filter((entry) => entry.id !== linked.id);
+  event.calendarEventId = "";
+  saveAdminState("retrait agenda", "evenement majeur campagne", event.title);
+}
+function deleteCampaignMajorEvent(id) {
+  const event = campaignMajorEventRecord(id);
+  if (!event || !confirm("Supprimer définitivement « "+event.title+" » et toutes ses inscriptions ?")) return;
+  const linked = campaignMajorEventCalendarRecord(event);
+  if (linked) adminState.calendarEvents = adminState.calendarEvents.filter((entry) => entry.id !== linked.id);
+  adminState.campaignEvents = adminState.campaignEvents.filter((entry) => entry.id !== id);
+  selectedCampaignMajorEventId = "";
+  saveAdminState("suppression", "evenement majeur campagne", event.title);
 }
 
 function normalizeCalendarEvents(items) {
@@ -1283,10 +1475,11 @@ function adminStateForApi(stateValue, target = "") {
 function adminChangeKeysForTarget(target = "") {
   const normalized = normalizeName(target);
   if (["administration", "sync", "synchronisation"].includes(normalized)) return null;
+  if (normalized.includes("evenement majeur campagne")) return ["campaignEvents", "calendarEvents"];
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
-  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents"];
+  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
   if (normalized.includes("mot cle contact")) return ["contactKeywords"];
   if (normalized.includes("dossier deces")) return ["deathCases", "localContacts"];
@@ -2290,6 +2483,7 @@ function renderAdminView() {
   if (activeAdminSection === "content") return renderContentAdmin();
   if (activeAdminSection === "homepage") return renderHomepageAdmin();
   if (activeAdminSection === "campaign-terrain") return renderCampaignTerrain();
+  if (activeAdminSection === "campaign-events") return renderCampaignMajorEvents();
   if (activeAdminSection === "photo-library") return renderPhotoLibraryAdmin();
   if (activeAdminSection === "keywords") return renderKeywordsAdmin();
   if (activeAdminSection === "social") return renderSocialAdmin();
@@ -3486,7 +3680,7 @@ function calendarCopyEvent(sourceId, occurrenceKey, target) {
   const copy = {
     ...source, id: crypto.randomUUID(), startAt: toLocalDateTimeValue(next),
     endAt: toLocalDateTimeValue(new Date(next.getTime() + duration)),
-    recurrence: "none", recurrenceUntil: "", attendanceByDate: {}, createdBy: currentUserId,
+    recurrence: "none", recurrenceUntil: "", attendanceByDate: {}, campaignEventId: "", createdBy: currentUserId,
     createdByName: userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: now, updatedAt: now
   };
@@ -3531,7 +3725,7 @@ function renderCalendarTimedEvent(item) {
     ${calendarAssignedToMe(item) ? `<span class="calendar-my-assignment" title="Cet événement vous est attribué">★ À moi</span>` : item.assignedUserIds?.length ? `<small class="calendar-assigned-count" title="${attr(calendarAssignmentText(item))}">👥 ${item.assignedUserIds.length}</small>` : ""}
     ${item.recurrence && item.recurrence !== "none" ? `<small>↻ ${text(calendarRecurrenceLabel(item.recurrence))}</small>` : ""}
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
-    ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? `<small>🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered} inscrit(s)</small>` : ""}
+
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
 }
@@ -3567,7 +3761,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? ` · 🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3647,7 +3841,7 @@ function renderCalendarEditor(item) {
   const isNew = !item.id;
   return `<aside class="calendar-editor" aria-label="${isNew ? "Nouvel événement" : "Modifier l’événement"}">
     <header><div><h3>${isNew ? "Nouvel événement" : "Modifier l’événement"}</h3><p>${isNew ? "Choisissez librement la plage horaire." : "Cliquez sur un événement pour consulter ses contacts et ses détails."}</p></div><button type="button" data-calendar-close aria-label="Fermer">${localIcon("x")}</button></header>
-    ${renderCalendarAttendance(item)}
+    ${item.campaignEventId && campaignMajorEventRecord(item.campaignEventId) ? `<div class="campaign-major-agenda-backlink"><button class="secondary-action compact" type="button" data-campaign-major-back="${attr(item.campaignEventId)}">Ouvrir la fiche événement de campagne</button></div>` : ""}
     <form data-calendar-save="${attr(item.id || "new")}">
       ${calendarLinkedContactIds(item).length ? `<p class="calendar-contact-summary">${calendarLinkedContactIds(item).length} contact(s) associé(s) — téléphone et email affichés ci-dessous.</p>` : ""}
       <fieldset class="calendar-contact-fieldset"><legend>Contacts associés</legend><p class="calendar-contact-help">Liez plusieurs contacts à cet événement. Cliquez sur un nom pour ouvrir sa fiche.</p>
@@ -3727,6 +3921,7 @@ function saveCalendarEvent(form) {
     recurrenceUntil: ["weekly", "monthly", "yearly"].includes(data.get("recurrence")) ? String(data.get("recurrenceUntil") || "") : "",
     contactIds: [...new Set(data.getAll("contactIds").map(String).filter((id) => contactById(id)))],
     assignedUserIds: [...new Set(data.getAll("assignedUserIds").map(String).filter(Boolean))].filter((id) => calendarTeamMembers().some((member) => member.id === id) || (previous?.assignedUserIds || []).includes(id)),
+    campaignEventId: previous?.campaignEventId || "",
     attendanceByDate: previous?.attendanceByDate || {},
     createdBy: previous?.createdBy || currentUserId,
     createdByName: previous?.createdByName || userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
@@ -3738,18 +3933,22 @@ function saveCalendarEvent(form) {
     return;
   }
   adminState.calendarEvents = previous ? adminState.calendarEvents.map((entry) => entry.id === id ? item : entry) : [item, ...(adminState.calendarEvents || [])];
+  const campaignMajor = (adminState.campaignEvents || []).find((entry) => entry.id === item.campaignEventId && entry.calendarEventId === item.id);
+  if (campaignMajor) { campaignMajor.title = item.title; campaignMajor.startAt = item.startAt; campaignMajor.endAt = item.endAt; campaignMajor.location = item.location; campaignMajor.description = item.body; campaignMajor.updatedAt = now; }
   selectedCalendarEventId = id;
   calendarCursor = startAt.slice(0, 10);
   delete adminFilters.calendarDraftStart;
-  saveAdminState(previous ? "modification" : "creation", "calendrier", item.title);
+  saveAdminState(previous ? "modification" : "creation", item.campaignEventId ? "evenement majeur campagne" : "calendrier", item.title);
 }
 
 function deleteCalendarEvent(id) {
   const item = (adminState.calendarEvents || []).find((entry) => entry.id === id);
   if (!item) return;
   adminState.calendarEvents = adminState.calendarEvents.filter((entry) => entry.id !== id);
+  const campaignMajor = (adminState.campaignEvents || []).find((entry) => entry.id === item.campaignEventId && entry.calendarEventId === id);
+  if (campaignMajor) campaignMajor.calendarEventId = "";
   selectedCalendarEventId = "";
-  saveAdminState("suppression", "calendrier", item.title);
+  saveAdminState("suppression", campaignMajor ? "evenement majeur campagne" : "calendrier", item.title);
 }
 
 function trombinoscopeCategoryById(id) {
@@ -4143,7 +4342,8 @@ function renderContactForm(contact) {
   const localCases = adminState.permanenceRequests.filter((item) => item.contactId === contact.id);
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
   const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  const campaignLinks = (adminState.campaignEvents || []).filter((item) => item.participants?.some((participant) => participant.contactId === contact.id)).map((item) => `<button type="button" data-open-contact-campaign-event="${attr(item.id)}">🎟 ${text(formatDate(item.startAt))} — ${text(item.title)}</button>`).join("");
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
@@ -5936,6 +6136,7 @@ function updateContactReferences(previousId, nextId) {
   adminState.permanenceRequests.forEach((item) => { if (item.contactId === previousId) item.contactId = nextId; });
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); for (const rows of Object.values(item.attendanceByDate || {})) rows.forEach((row) => { if (row.contactId === previousId) row.contactId = nextId; }); });
+  (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).map((row) => ({...row, contactId: row.contactId === previousId ? nextId : row.contactId})); });
   adminState.deathCases.forEach((item) => {
     if (item.deceasedId === previousId) item.deceasedId = nextId;
     (item.relatives || []).forEach((relative) => { if (relative.contactId === previousId) relative.contactId = nextId; });
@@ -5947,6 +6148,7 @@ function clearDeletedContactReferences(ids) {
   adminState.permanenceRequests.forEach((item) => { if (deleted.has(item.contactId)) item.contactId = ""; });
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); for (const [day, rows] of Object.entries(item.attendanceByDate || {})) item.attendanceByDate[day] = rows.filter((row) => !deleted.has(row.contactId)); });
+  (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).filter((row) => !deleted.has(row.contactId)); });
   adminState.deathCases.forEach((item) => {
     if (deleted.has(item.deceasedId)) item.deceasedId = "";
     item.relatives = (item.relatives || []).filter((relative) => !deleted.has(relative.contactId));
@@ -7965,6 +8167,49 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (event.target.closest("[data-campaign-major-new]")) {
+    selectedCampaignMajorEventId = "new"; campaignMajorEventSearchText = ""; renderAdmin(); return;
+  }
+  const campaignMajorOpen = event.target.closest("[data-campaign-major-open]");
+  if (campaignMajorOpen) {
+    selectedCampaignMajorEventId = campaignMajorOpen.dataset.campaignMajorOpen;
+    campaignMajorEventSearchText = ""; renderAdmin(); return;
+  }
+  const campaignMajorAdd = event.target.closest("[data-campaign-major-add]");
+  if (campaignMajorAdd) { changeCampaignMajorParticipation(selectedCampaignMajorEventId, campaignMajorAdd.dataset.campaignMajorAdd, "add"); return; }
+  const campaignMajorRemove = event.target.closest("[data-campaign-major-remove]");
+  if (campaignMajorRemove) {
+    if (confirm("Retirer ce contact des participants ?")) changeCampaignMajorParticipation(selectedCampaignMajorEventId, campaignMajorRemove.dataset.campaignMajorRemove, "remove");
+    return;
+  }
+  const campaignMajorContact = event.target.closest("[data-campaign-major-contact]");
+  if (campaignMajorContact) {
+    if (!contactById(campaignMajorContact.dataset.campaignMajorContact)) return;
+    selectedContactId = campaignMajorContact.dataset.campaignMajorContact;
+    adminFilters.contacts = {perPage:contactSearchFilters().perPage,page:1};
+    clearContactSelection();activeAdminSection = "contacts";renderAdmin();return;
+  }
+  const campaignMajorExport = event.target.closest("[data-campaign-major-export]");
+  if (campaignMajorExport) { exportCampaignMajorParticipants(campaignMajorExport.dataset.campaignMajorExport); return; }
+  const campaignMajorLink = event.target.closest("[data-campaign-major-link-calendar]");
+  if (campaignMajorLink) { linkCampaignMajorCalendar(campaignMajorLink.dataset.campaignMajorLinkCalendar); return; }
+  const campaignMajorUnlink = event.target.closest("[data-campaign-major-unlink-calendar]");
+  if (campaignMajorUnlink) { unlinkCampaignMajorCalendar(campaignMajorUnlink.dataset.campaignMajorUnlinkCalendar); return; }
+  const campaignMajorDelete = event.target.closest("[data-campaign-major-delete]");
+  if (campaignMajorDelete) { deleteCampaignMajorEvent(campaignMajorDelete.dataset.campaignMajorDelete); return; }
+  const campaignFromContact = event.target.closest("[data-open-contact-campaign-event]");
+  if (campaignFromContact) { selectedCampaignMajorEventId = campaignFromContact.dataset.openContactCampaignEvent; activeAdminSection = "campaign-events"; renderAdmin(); return; }
+  const campaignMajorBack = event.target.closest("[data-campaign-major-back]");
+  if (campaignMajorBack) { selectedCampaignMajorEventId = campaignMajorBack.dataset.campaignMajorBack; activeAdminSection = "campaign-events"; renderAdmin(); return; }
+  const campaignMajorOpenCalendar = event.target.closest("[data-campaign-major-open-calendar]");
+  if (campaignMajorOpenCalendar) {
+    const item = campaignMajorEventCalendarRecord(campaignMajorEventRecord(campaignMajorOpenCalendar.dataset.campaignMajorOpenCalendar));
+    if (!item) return;
+    selectedCalendarEventId = item.id;
+    selectedCalendarOccurrenceKey = item.startAt.slice(0,10);
+    calendarCursor = selectedCalendarOccurrenceKey;
+    calendarView = "day"; activeAdminSection = "calendar"; renderAdmin(); return;
+  }
   const attendeeAdd = event.target.closest("[data-attendance-add]");
   if (attendeeAdd) {
     const panel = attendeeAdd.closest("[data-calendar-attendance]");
@@ -8644,6 +8889,8 @@ document.addEventListener("submit", async (event) => {
   if (photoUpdate) { event.preventDefault(); const photo = adminState.photoLibrary.photos.find((item) => item.id === photoUpdate.dataset.photoUpdate); if (!photo) return; const data = new FormData(photoUpdate); if (!photo.eventId || !state.agenda.some((item) => item.id === photo.eventId)) { photo.commune = String(data.get("commune") || "").trim().slice(0, 120); photo.takenAt = String(data.get("takenAt") || ""); } photo.alt = String(data.get("alt") || "").trim().slice(0, 300); publishPhotoLibrary("modification photo", photo.fileName); return; }
   const categorySave = form.closest("[data-calendar-category-save]");
   if (categorySave) { event.preventDefault(); saveCalendarCategory(categorySave); return; }
+  const campaignMajorSave = form.closest("[data-campaign-major-save]");
+  if (campaignMajorSave) { event.preventDefault(); saveCampaignMajorEvent(campaignMajorSave); return; }
   const calendarSave = form.closest("[data-calendar-save]");
   if (calendarSave) { event.preventDefault(); saveCalendarEvent(calendarSave); return; }
   if (form.id === "hero-search-form") {
@@ -8822,6 +9069,13 @@ document.addEventListener("dblclick", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-campaign-major-search]")) {
+    campaignMajorEventSearchText = event.target.value;
+    const entry = campaignMajorEventRecord(selectedCampaignMajorEventId);
+    const results = event.target.closest("[data-campaign-major-attendance]")?.querySelector("[data-campaign-major-results]");
+    if (entry && results) results.innerHTML = renderCampaignMajorContactResults(entry, campaignMajorEventSearchText);
+    return;
+  }
   if (event.target.matches("[data-attendance-search]")) { searchCalendarAttendance(event.target); return; }
   if (event.target.matches("[data-calendar-color-hex]")) {
     const field = event.target;
@@ -8872,6 +9126,10 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-campaign-major-status]")) {
+    changeCampaignMajorParticipation(selectedCampaignMajorEventId, event.target.dataset.campaignMajorStatus, event.target.checked ? event.target.value : "registered");
+    return;
+  }
   if (event.target.matches("[data-attendance-check]")) {
     const panel = event.target.closest("[data-calendar-attendance]");
     const status = event.target.checked ? event.target.value : "registered";
