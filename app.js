@@ -722,6 +722,74 @@ function searchCalendarAttendance(input) {
   results.innerHTML = matches.length ? matches.map((contact) => `<button type="button" data-attendance-add="${attr(contact.id)}"><strong>${text(contactDisplayName(contact))}</strong><small>${text([contact.city, contact.mobile, contact.email].filter(Boolean).join(" · "))}</small></button>`).join("") : "<small>Aucun contact disponible.</small>";
 }
 
+
+function participantXmlText(value) {
+  return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function participantWorkbookBytes(rows) {
+  // Generates a real, uncompressed OOXML .xlsx file without a third-party script or CDN.
+  const ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+  const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const sheet = xml + `<worksheet xmlns="${ns}"><cols>${[17, 22, 24, 23, 33, 20].map((width, i) => `<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join("")}</cols><sheetData>` +
+    rows.map((row, index) => `<row r="${index + 1}">` + row.map((value, i) => `<c r="${letters[i]}${index + 1}" t="inlineStr"><is><t xml:space="preserve">${participantXmlText(value)}</t></is></c>`).join("") + "</row>").join("") + "</sheetData></worksheet>";
+  const parts = [
+    ["[Content_Types].xml", xml + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
+    ["_rels/.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ["xl/workbook.xml", xml + `<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Participants" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
+    ["xl/worksheets/sheet1.xml", sheet]
+  ];
+  const encoder = new TextEncoder();
+  const files = parts.map(([name, contents]) => ({ name: encoder.encode(name), body: encoder.encode(contents) }));
+  const crcTable = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let bit = 0; bit < 8; bit++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); crcTable[n] = c >>> 0; }
+  const crc32 = (bytes) => { let crc = 0xFFFFFFFF; for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8); return (crc ^ 0xFFFFFFFF) >>> 0; };
+  const localSize = files.reduce((sum, f) => sum + 30 + f.name.length + f.body.length, 0);
+  const centralSize = files.reduce((sum, f) => sum + 46 + f.name.length, 0);
+  const bytes = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(bytes.buffer);
+  const u16 = (o, v) => view.setUint16(o, v, true);
+  const u32 = (o, v) => view.setUint32(o, v >>> 0, true);
+  let pos = 0;
+  for (const f of files) {
+    f.offset = pos;
+    f.crc = crc32(f.body);
+    u32(pos, 0x04034b50); u16(pos+4, 20); u16(pos+6, 0); u16(pos+8, 0); u32(pos+14, f.crc);
+    u32(pos+18, f.body.length); u32(pos+22, f.body.length); u16(pos+26, f.name.length); u16(pos+28, 0);
+    pos += 30; bytes.set(f.name, pos); pos += f.name.length; bytes.set(f.body, pos); pos += f.body.length;
+  }
+  const centralStart = pos;
+  for (const f of files) {
+    u32(pos, 0x02014b50); u16(pos+4, 20); u16(pos+6, 20); u16(pos+8, 0); u16(pos+10, 0);
+    u32(pos+16, f.crc); u32(pos+20, f.body.length); u32(pos+24, f.body.length);
+    u16(pos+28, f.name.length); u16(pos+30, 0); u16(pos+32, 0); u16(pos+34, 0);
+    u16(pos+36, 0); u32(pos+38, 0); u32(pos+42, f.offset);
+    pos += 46; bytes.set(f.name, pos); pos += f.name.length;
+  }
+  u32(pos, 0x06054b50); u16(pos+4, 0); u16(pos+6, 0); u16(pos+8, files.length);
+  u16(pos+10, files.length); u32(pos+12, pos-centralStart); u32(pos+16, centralStart); u16(pos+20, 0);
+  return bytes;
+}
+function exportCalendarAttendance(eventId, day) {
+  const item = (adminState.calendarEvents || []).find((entry) => entry.id === eventId);
+  if (!item || !calendarEventOnDate(item, day)) return;
+  const headers = ["Prénom", "Nom", "Commune", "Téléphone", "Mail", "Présence"];
+  const entries = calendarAttendanceEntries(item, day);
+  const rows = entries.map(({ contactId, status }) => {
+    const contact = contactById(contactId) || {};
+    return [
+      contact.firstName || "", contact.lastName || contact.usageName || "",
+      contact.city || "", contact.mobile || contact.phone || "",
+      contact.email || "", status === "attended" ? "Est venu" : status === "absent" ? "N'est pas venu" : "À confirmer"
+    ];
+  });
+  const filename = "participants-" + slugify(item.title || "evenement") + "-" + day + ".xlsx";
+  downloadFile(filename, participantWorkbookBytes([headers, ...rows]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  showToast(entries.length + " participant(s) exporté(s) vers Excel.");
+}
+
 function normalizeCalendarEvents(items) {
   const now = new Date().toISOString();
   return (Array.isArray(items) ? items : []).map((item) => {
