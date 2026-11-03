@@ -11523,3 +11523,11 @@ body.admin-mode .institutions-list button.active { border-color: #3165a3; backgr
 body.admin-mode .institutions-page input[type="search"],body.admin-mode .institutions-page select { max-width: 100%; margin: 10px 0; padding: 10px; border: 1px solid #cfdae9; border-radius: 7px; }
 body.admin-mode .contact-institution-link { padding: 12px; background: #ecf4ff; border-radius: 8px; margin: 12px 0; }
 @media(max-width: 850px) { body.admin-mode .institutions-layout { grid-template-columns: 1fr; } }
+
+body.admin-mode .institution-create { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 12px 0; }
+body.admin-mode .institution-create input { min-width: 240px; }
+body.admin-mode .institution-edit { display: grid; gap: 10px; margin-top: 12px; max-width: 600px; }
+body.admin-mode .institution-edit label { display: grid; gap: 5px; font-size: .87rem; font-weight: 650; }
+body.admin-mode .institution-edit input { min-height: 38px; padding: 8px 10px; border: 1px solid #ccd8e9; border-radius: 6px; }
+body.admin-mode .institutions-page details { margin-top: 18px; padding: 14px; border: 1px solid #d9e4f2; border-radius: 9px; }
+body.admin-mode .institutions-page summary { font-weight: 750; cursor: pointer; }
