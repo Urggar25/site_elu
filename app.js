@@ -4010,7 +4010,7 @@ function renderCalendarEditor(item) {
 
 
 function downloadCalendarAgendaPdf(startKey, endKey) {
-  const valid = /^\\d{4}-\\d{2}-\\d{2}$/;
+  const valid = /^\d{4}-\d{2}-\d{2}$/;
   if (!valid.test(startKey) || !valid.test(endKey) || calendarDateKey(startKey) !== startKey || calendarDateKey(endKey) !== endKey || startKey > endKey) {
     showToast("Choisissez une période valide pour l'export PDF."); return;
   }
@@ -4032,7 +4032,7 @@ function downloadCalendarAgendaPdf(startKey, endKey) {
       lines.push({ kind: "event", value: (hour ? hour + (end ? " - " + end : "") + "  |  " : "") + title });
       const place = String(item.location || item.place || "").trim();
       if (place) lines.push({ kind: "detail", value: "Lieu : " + place });
-      const description = String(item.description || "").replace(/\\s+/g, " ").trim();
+      const description = String(item.description || "").replace(/\s+/g, " ").trim();
       if (description) lines.push({ kind: "detail", value: description.slice(0, 500) });
     });
   }
@@ -4047,10 +4047,10 @@ function downloadCalendarAgendaPdf(startKey, endKey) {
       const byte = point <= 255 ? point : cp1252[point];
       result += byte === undefined || byte < 32 && byte !== 32 ? "?" : String.fromCharCode(byte);
     }
-    return result.replace(/\\/g, "\\\\").replace(/\\(/g, "\\(").replace(/\\)/g, "\\)");
+    return result.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
   };
   const wrap = (value, width) => {
-    const words = String(value).split(/\\s+/);
+    const words = String(value).split(/\s+/);
     const out = [];
     let line = "";
     for (const word of words) {
@@ -4075,7 +4075,7 @@ function downloadCalendarAgendaPdf(startKey, endKey) {
   };
   const finishPage = () => {
     drawing.push("BT /F1 9 Tf 1 0 0 1 42 34 Tm (" + encoded("Agenda - Page " + pageNumber) + ") Tj ET");
-    pageStreams.push(drawing.join("\\n")); drawing = []; y = 745; pageNumber++;
+    pageStreams.push(drawing.join("\n")); drawing = []; y = 745; pageNumber++;
   };
   write("Agenda partagé", 19, true);
   write("Du " + displayDate(startKey) + " au " + displayDate(endKey), 11);
@@ -4094,19 +4094,19 @@ function downloadCalendarAgendaPdf(startKey, endKey) {
     const streamId = pageId + 1;
     pageIds.push(pageId + " 0 R");
     objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents " + streamId + " 0 R >>");
-    objects.push("<< /Length " + content.length + " >>\\nstream\\n" + content + "\\nendstream");
+    objects.push("<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream");
   }
   objects[2] = "<< /Type /Pages /Kids [" + pageIds.join(" ") + "] /Count " + pageIds.length + " >>";
-  let pdf = "%PDF-1.4\\n%âãÏÓ\\n", offsets = [0];
+  let pdf = "%PDF-1.4\n%âãÏÓ\n", offsets = [0];
   objects.forEach((object, index) => {
     if (!index) return;
     offsets[index] = pdf.length;
-    pdf += index + " 0 obj\\n" + object + "\\nendobj\\n";
+    pdf += index + " 0 obj\n" + object + "\nendobj\n";
   });
   const xrefOffset = pdf.length;
-  pdf += "xref\\n0 " + objects.length + "\\n0000000000 65535 f \\n";
-  for (let i = 1; i < objects.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \\n";
-  pdf += "trailer\\n<< /Size " + objects.length + " /Root 1 0 R >>\\nstartxref\\n" + xrefOffset + "\\n%%EOF";
+  pdf += "xref\n0 " + objects.length + "\n0000000000 65535 f \n";
+  for (let i = 1; i < objects.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \n";
+  pdf += "trailer\n<< /Size " + objects.length + " /Root 1 0 R >>\nstartxref\n" + xrefOffset + "\n%%EOF";
   const bytes = Uint8Array.from(pdf, (char) => char.charCodeAt(0));
   downloadFile("agenda-" + startKey + "-au-" + endKey + ".pdf", bytes, "application/pdf");
   showToast(eventCount + " événement(s) exporté(s) en PDF.");
