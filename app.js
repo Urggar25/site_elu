@@ -3330,7 +3330,8 @@ function renderContactDynamicFilter(field, value = "") {
 
 function renderContactDynamicFilters(filters) {
   const primaryFields = new Set(["firstName", "lastName", "city"]);
-  const fields = contactFields().filter((field) => field.id !== "id" && field.id !== "keywords" && !primaryFields.has(field.id));
+  // Conserver la saisie historique si une recherche enregistrée utilisait field_keywords.
+  const fields = contactFields().filter((field) => field.id !== "id" && (field.id !== "keywords" || Boolean(filters.fields?.keywords)) && !primaryFields.has(field.id));
   const activeCount = Object.keys(filters.fields || {}).filter((id) => !primaryFields.has(id)).length + normalizedContactKeywordIds(filters.keywordIds).length;
   return `<details class="contact-filter-section contact-dynamic-search" ${activeCount ? "open" : ""}>
     <summary><span>Plus de critères</span><small>${activeCount ? `${activeCount} actif${activeCount > 1 ? "s" : ""}` : "Téléphone, email, catégorie, organisation…"}</small></summary>
