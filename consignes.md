@@ -23,3 +23,5 @@
 21. Sur mobile, conserver les actions de compte dans le menu déroulant lorsque la barre de compte desktop est masquée ; vérifier en particulier « Connexion » et « Quitter ».
 
 22. Pour les campagnes de mails, garder les clés fournisseur et l'adresse expéditrice dans `api/db.php` privé ; ne jamais les envoyer à l'état administratif public. Construire les listes de destinataires côté serveur à partir des recherches enregistrées et exiger le consentement explicite, la déduplication et la désinscription.
+
+23. Pour les liens contacts ↔ calendrier, enregistrer les IDs uniquement dans `calendarEvents[].contactIds`, construire le sens inverse par recherche, et nettoyer ces IDs lors des suppressions de contacts. Une navigation de contact vers calendrier doit sélectionner la date et ouvrir l'événement ; la navigation inverse doit vider les filtres empêchant de voir la fiche.
