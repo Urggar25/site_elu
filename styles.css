@@ -11353,3 +11353,6 @@ body.admin-mode .calendar-day-column.calendar-drop-target { outline: 3px solid #
 body.admin-mode .calendar-event.calendar-drag-source { opacity: .5; outline: 2px dashed #2d7de0; }
 #calendar-copy-drag-label { position: fixed; pointer-events: none; z-index: 99999; border-radius: 7px; padding: .4rem .6rem; color: white; background: #215cb1; box-shadow: 0 4px 14px #123c7a44; font-weight: 700; font-size: .8rem; white-space: nowrap; }
 @media (max-width: 850px) { .calendar-copy-hint { font-size: .72rem; } }
+
+body.admin-mode .calendar-event .calendar-my-assignment { position: absolute; right: 4px; top: 3px; z-index: 2; white-space: nowrap; font-size: .59rem; padding: 2px 3px; }
+body.admin-mode .calendar-event:has(.calendar-my-assignment) > strong { padding-right: 33px; }
