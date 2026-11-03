@@ -44,7 +44,26 @@ function analyze() {
   for (const [town, records] of grouped) {
     if(existingTowns.has(town)) continue;
     const labeled = records.map(c=>({c, evidence:candidateEvidence(c)})).filter(x=>x.evidence.length);
-    if(!labeled.length) continue;
+    if(!labeled.length) {
+      // Duplicate mayor identities without strong institutional evidence still need a
+      // review queue rather than silently disappearing from the migration tool.
+      const byIdentity = new Map();
+      for (const c of records) {
+        const id = identity(c);
+        if(!c.firstName || !id || !(tagged(c,"maire") || norm(c.category)==="maire")) continue;
+        byIdentity.set(id,(byIdentity.get(id)||[]).concat(c));
+      }
+      for (const duplicates of byIdentity.values()) {
+        if(duplicates.length<2)continue;
+        for(const c of duplicates) result.push({
+          id:c.id,town,city:c.city,personId:duplicates.find(p=>p.id!==c.id)?.id||"",
+          evidence:["doublon probable de personne"],safe:false,
+          reason:"Choisissez uniquement la fiche à caractère institutionnel (coordonnées mairie).",
+          contact:c
+        });
+      }
+      continue;
+    }
     // A commune with several possible institution records requires human review.
     for (const {c,evidence} of labeled) {
       const sameName = identity(c);
@@ -163,6 +182,7 @@ function renderMigration() {
         <input type="checkbox" data-institution-choice="${escape(p.id)}" ${choices.has(p.id)?"checked":""} ${busy?"disabled":""}/>
         <span><strong>${escape(p.city)} — ${escape(display(p.contact))}</strong>
           <small>${escape(p.evidence.join(", "))} · ${p.personId ? "Personne correspondante : "+escape(display((adminState.localContacts||[]).find(c=>c.id===p.personId)||{})) : "Aucune personne correspondante"}</small>
+          <small>Coordonnées à transférer : ${escape([p.contact.email,p.contact.phone,p.contact.streetNameFull||p.contact.streetName].filter(Boolean).join(" · ")||"Non renseignées")}</small>
           ${p.reason ? `<em>À examiner : ${escape(p.reason)}</em>` : '<em>Correspondance probable</em>'}
         </span></label>`).join("") || "<p>Aucune fiche candidate détectée.</p>"}</div>
       <p><strong>Prévisualisation :</strong> ${current.created.length} institution(s), ${current.newPeople.length} personne(s) à créer et ${current.changed.length} fiche(s) à actualiser.
