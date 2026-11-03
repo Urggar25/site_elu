@@ -11478,3 +11478,23 @@ body.admin-mode .calendar-pdf-export button { align-self: end; white-space: nowr
   body.admin-mode .contact-saved-popover { width: min(94vw, 650px); }
   body.admin-mode .calendar-pdf-export { grid-column: 1 / -1; }
 }
+
+/* Import ponctuel des élus municipaux : ne modifie aucun autre écran. */
+body.admin-mode .adjoint-import-page { display: grid; gap: 16px; padding: 18px; max-width: 1300px; }
+body.admin-mode .adjoint-import-page .admin-panel { display: block; padding: 24px; background: #fff; border: 1px solid #dbe3ee; border-radius: 12px; }
+body.admin-mode .adjoint-import-page h2 { margin: 0 0 12px; font-size: 1.55rem; }
+body.admin-mode .adjoint-import-page h3 { margin: 0 0 12px; }
+body.admin-mode .adjoint-import-page p { margin: 9px 0; line-height: 1.55; }
+body.admin-mode .adjoint-upload { display: grid !important; gap: 14px; }
+body.admin-mode .adjoint-upload > label:first-child { display: grid; gap: 10px; }
+body.admin-mode .adjoint-upload input[type="file"] { display: block; max-width: 100%; padding: 12px; border: 1px dashed #aebdd0; border-radius: 8px; background: #f8fafd; }
+body.admin-mode .adjoint-option { display: flex; align-items: center; gap: 9px; font-weight: 650; }
+body.admin-mode .adjoint-option input { width: 18px; height: 18px; flex-shrink: 0; }
+body.admin-mode .adjoint-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+body.admin-mode .adjoint-stat-grid > div { padding: 13px; display: grid; gap: 4px; background: #f5f8fd; border: 1px solid #e0e7f2; border-radius: 9px; }
+body.admin-mode .adjoint-stat-grid strong { color: #183c6f; font-size: 1.5rem; }
+body.admin-mode .adjoint-stat-grid span { font-size: .82rem; color: #4a5b70; }
+body.admin-mode .adjoint-alert { background: #fff8e7; padding: 14px 18px; border: 1px solid #e9cf87; border-radius: 8px; margin: 14px 0; }
+body.admin-mode .adjoint-alert ul { max-height: 240px; overflow-y: auto; padding-left: 22px; }
+body.admin-mode .adjoint-feedback { padding: 12px; background: #eff7f1; border: 1px solid #a9cfb3; border-radius: 7px; }
+body.admin-mode .adjoint-preview > button { margin: 9px 10px 0 0; }
