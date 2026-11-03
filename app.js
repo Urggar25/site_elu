@@ -3076,7 +3076,7 @@ function renderMailCampaigns() {
     <form class="admin-form mail-campaign-form" data-mail-campaign-form>
       <label>Liste de contacts (recherche enregistrée)
         <select name="searchId" required><option value="">Choisir une liste…</option>
-        ${searches.map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
+        ${searches.filter((item) => !item.sourceIds?.length).map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
       </label>
       <label>Modèle de mail
         <select name="templateId" required><option value="">Choisir un modèle…</option>
@@ -3465,10 +3465,22 @@ function exportSavedContactSearch(id) {
   if (!item) return;
   const contacts = savedSearchContacts(item, searches);
   const result = savedSearchExportPreview(contacts);
+  const sourceOccurrences = (entry, visited = new Set()) => {
+    if (visited.has(entry.id)) return [];
+    const next = new Set(visited);
+    next.add(entry.id);
+    return entry.sourceIds?.length
+      ? entry.sourceIds.flatMap((id) => {
+          const source = searches.find((item) => item.id === id);
+          return source ? sourceOccurrences(source, next) : [];
+        })
+      : savedSearchContacts(entry, searches);
+  };
+  const overlaps = Math.max(0, sourceOccurrences(item).length - contacts.length);
   const rows = [["Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"], ...result.rows];
   downloadFile("recherche-" + slugify(item.name) + ".xlsx", participantWorkbookBytes(rows),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  showToast(result.rows.length + " adresses exportées · " + result.totalAvoided + " doublon(s) évité(s).");
+  showToast(result.rows.length + " adresses exportées · " + (result.totalAvoided + overlaps) + " doublon(s) évité(s), dont " + overlaps + " répétitions entre recherches.");
 }
 
 function mergeSavedContactSearches() {
@@ -3502,10 +3514,12 @@ function renderSavedContactSearches() {
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       const contacts = savedSearchContacts(item, searches);
       const summary = savedSearchExportPreview(contacts);
+      const sources = item.sourceIds?.map((id) => searches.find((source) => source.id === id)).filter(Boolean) || [];
+      const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
         <label title="Inclure cette recherche dans une fusion"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Fusionner ${attr(item.name)}" /></label>
         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-          <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${contacts.length} contacts · ${summary.rows.length} adresses · ${summary.totalAvoided} doublon(s) évité(s) (${summary.personDuplicates} personnes, ${summary.addressDuplicates} adresses)</small>
+          <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${contacts.length} contacts · ${summary.rows.length} adresses · ${summary.totalAvoided + overlapCount} doublon(s) évité(s) (${overlapCount} entre recherches, ${summary.personDuplicates} personnes, ${summary.addressDuplicates} adresses)</small>
         </button>
         <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel</button>
         ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
