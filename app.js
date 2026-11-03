@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-emergency-restore-v1";
+const ASSET_VERSION = "20261103-safe-lazy-contact-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -2460,6 +2460,9 @@ function renderAdmin() {
     <div id="admin-view">${renderAdminView()}</div>
   </section>`;
   mountDocumentPdfPreview();
+  if (activeAdminSection === "saved-contact-searches") {
+    hydrateSavedContactStats(document.querySelector("#admin-view .saved-contact-searches"));
+  }
   if (focusCalendarBodyAfterRender) {
     focusCalendarBodyAfterRender = false;
     requestAnimationFrame(() => document.querySelector("[data-calendar-body]")?.focus());
@@ -3514,14 +3517,10 @@ function renderSavedContactSearches({ standalone = false } = {}) {
       ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
-      const contacts = savedSearchContacts(item, searches);
-      const summary = savedSearchExportPreview(contacts);
-      const sources = item.sourceIds?.map((id) => searches.find((source) => source.id === id)).filter(Boolean) || [];
-      const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
         <label title="Inclure cette recherche dans une fusion"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Fusionner ${attr(item.name)}" /></label>
         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-          <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${contacts.length} contacts · ${summary.rows.length} adresses · ${summary.totalAvoided + overlapCount} doublon(s) évité(s) (${overlapCount} entre recherches, ${summary.personDuplicates} personnes, ${summary.addressDuplicates} adresses)</small>
+          <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Statistiques en cours de calcul…</small>
         </button>
         <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel</button>
         ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
@@ -3529,6 +3528,42 @@ function renderSavedContactSearches({ standalone = false } = {}) {
       </div>`;
     }).join("")}</div><button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
+}
+
+// Statistics are progressively hydrated after the list is visible.
+// This deliberately avoids touching persistent state, filtering logic or app initialization.
+function hydrateSavedContactStats(root) {
+  if (!root) return;
+  const elements = [...root.querySelectorAll("[data-saved-contact-stats]")];
+  if (!elements.length) return;
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const lookup = new Map(searches.map((item) => [item.id, item]));
+  let index = 0;
+  const processNext = () => {
+    if (!root.isConnected) return;
+    while (index < elements.length) {
+      const node = elements[index++];
+      if (!node.isConnected) continue;
+      const item = lookup.get(node.dataset.savedContactStats);
+      if (!item) continue;
+      try {
+        const contacts = savedSearchContacts(item, searches);
+        const summary = savedSearchExportPreview(contacts);
+        const sources = item.sourceIds?.map((id) => lookup.get(id)).filter(Boolean) || [];
+        const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
+        node.textContent = savedContactSearchLabel(item) + " · " + contacts.length +
+          " contacts · " + summary.rows.length + " adresses · " + (summary.totalAvoided + overlapCount) +
+          " doublon(s) évité(s) (" + overlapCount + " entre recherches, " +
+          summary.personDuplicates + " personnes, " + summary.addressDuplicates + " adresses)";
+      } catch (error) {
+        console.error("Statistiques de recherche sauvegardée :", error);
+        node.textContent = "Statistiques indisponibles (la recherche reste utilisable).";
+      }
+      break;
+    }
+    if (index < elements.length) setTimeout(processNext, 24);
+  };
+  setTimeout(processNext, 0);
 }
 
 function renderSavedContactSearchesPage() {
@@ -4456,7 +4491,7 @@ function renderContacts() {
       </form>
       <div class="contact-saved-popover-wrap">
         <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
-        <div id="contact-saved-popover" class="contact-saved-popover" hidden>${renderSavedContactSearches()}</div>
+        <div id="contact-saved-popover" class="contact-saved-popover" hidden></div>
       </div>
     </section>
     <div class="admin-split contact-split">
@@ -8175,7 +8210,14 @@ document.addEventListener("click", async (event) => {
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
   if (savedToggle) {
     const menu = document.querySelector("#contact-saved-popover");
-    if (menu) { menu.hidden = !menu.hidden; savedToggle.setAttribute("aria-expanded", String(!menu.hidden)); }
+    if (menu) {
+      if (menu.hidden && !menu.childElementCount) {
+        menu.innerHTML = renderSavedContactSearches();
+      }
+      menu.hidden = !menu.hidden;
+      savedToggle.setAttribute("aria-expanded", String(!menu.hidden));
+      if (!menu.hidden) hydrateSavedContactStats(menu);
+    }
     return;
   }
   const savedPopover = document.querySelector("#contact-saved-popover");
