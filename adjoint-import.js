@@ -181,7 +181,8 @@
       // No mayor line means no assumption about who is the current mayor.
       if (mayorName) {
         for (const existing of local) {
-          if (fullNameKey(existing.firstName, existing.lastName || existing.usageName) === mayorName) continue;
+          if ([existing.lastName, existing.usageName, existing.birthName].some((last) =>
+            fullNameKey(existing.firstName, last) === mayorName)) continue;
           if (!hasTag(existing, "maire") && key(existing.category) !== "maire") continue;
           const next = updated.get(existing.id) || existing;
           apply(next, removeTag(tagList(next), "maire"), key(next.category) === "maire" ? "elu local" : next.category);
@@ -257,7 +258,7 @@
         ${plan.conflicts.length || plan.warnings.length ? `<div class="adjoint-alert"><strong>${plan.conflicts.length} conflit(s) et ${plan.warnings.length} ligne(s) incomplète(s)</strong>
           <ul>${[...plan.conflicts, ...plan.warnings].slice(0, 25).map((warning) => `<li>${escape(warning)}</li>`).join("")}</ul>
           ${plan.conflicts.length + plan.warnings.length > 25 ? "<p>Liste limitée aux 25 premiers avertissements.</p>" : ""}</div>` : ""}
-        <button type="button" class="primary-action" data-adjoint-apply ${busy || !plan.changed ? "disabled" : ""}>Confirmer et mettre à jour ${plan.changed} fiche(s)</button>
+        <button type="button" class="primary-action" data-adjoint-apply ${busy || !plan.changed || !canModerate() ? "disabled" : ""}>Confirmer et mettre à jour ${plan.changed} fiche(s)</button>
         <button type="button" class="secondary-action compact" data-adjoint-clear ${busy ? "disabled" : ""}>Annuler l'import</button>
       </section>` : ""}
       ${report ? `<section class="admin-panel"><h3>Dernier import</h3><p>${escape(report)}</p></section>` : ""}
@@ -280,7 +281,7 @@
   }
 
   function apply() {
-    if (busy || !source || !isAdmin()) return;
+    if (busy || !source || !canModerate()) return;
     const plan = calculate();
     if (!plan || !plan.changed) return;
     const answer = confirm("Appliquer " + plan.updated.length + " modifications et créer " +
