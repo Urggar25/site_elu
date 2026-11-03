@@ -154,6 +154,7 @@ function admin_partial_update_paths(): array
         'permanenceKeywords',
         'teamTasks',
         'calendarEvents',
+        'campaignEvents',
         'calendarEventCategories',
         'contactFields',
         'savedContactSearches',
