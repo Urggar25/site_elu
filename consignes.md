@@ -27,3 +27,5 @@
 23. Pour les liens contacts ↔ calendrier, enregistrer les IDs uniquement dans `calendarEvents[].contactIds`, construire le sens inverse par recherche, et nettoyer ces IDs lors des suppressions de contacts. Une navigation de contact vers calendrier doit sélectionner la date et ouvrir l'événement ; la navigation inverse doit vider les filtres empêchant de voir la fiche.
 
 24. Dans les cases des vues jour/semaine/mois de l'agenda, ne pas réintroduire d'horaires en texte : la grille et l'infobulle les donnent déjà. Dans l'éditeur d'événement, les contacts liés affichent directement leurs téléphones et leur email depuis la fiche (sans les dupliquer en base), avec des liens `tel:` et `mailto:` protégés par échappement HTML.
+
+25. L'ouverture des détails d'événement doit fonctionner au clic simple : le double-clic ne permet pas de retrouver spontanément les téléphones/emails. Montrer les coordonnées des contacts associés en haut de la fiche d'événement, et comparer la version du JavaScript réellement servie par l'hébergement si une capture montre d'anciens horaires malgré leur suppression dans GitHub.
