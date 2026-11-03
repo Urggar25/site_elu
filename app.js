@@ -8515,6 +8515,59 @@ document.addEventListener("submit", async (event) => {
   if (adminCreate) { event.preventDefault(); handleAdminCreate(adminCreate.dataset.adminCreate, adminCreate); }
 });
 
+document.addEventListener("pointerdown", (event) => {
+  if (!event.ctrlKey || event.button !== 0 || !canModerate() || activeAdminSection !== "calendar" || calendarView === "month") return;
+  const button = event.target.closest(".calendar-day-column [data-calendar-event]");
+  if (!button) return;
+  calendarCtrlDrag = {
+    pointerId: event.pointerId, sourceId: button.dataset.calendarEvent,
+    occurrenceKey: button.dataset.calendarOccurrence || "",
+    originX: event.clientX, originY: event.clientY, started: false
+  };
+  // Empêcher Ctrl+clic de sélectionner du texte, sans déclencher la duplication avant un déplacement.
+  event.preventDefault();
+});
+document.addEventListener("pointermove", (event) => {
+  const drag = calendarCtrlDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  if (!drag.started && Math.hypot(event.clientX - drag.originX, event.clientY - drag.originY) < 8) return;
+  if (!drag.started) {
+    drag.started = true;
+    const marker = document.createElement("div");
+    marker.id = "calendar-copy-drag-label";
+    marker.textContent = "＋ Dupliquer · déposer dans un créneau";
+    document.body.append(marker);
+    document.querySelectorAll(".calendar-day-column [data-calendar-event]").forEach((button) => {
+      if (button.dataset.calendarEvent === drag.sourceId) button.classList.add("calendar-drag-source");
+    });
+  }
+  const label = document.querySelector("#calendar-copy-drag-label");
+  if (label) { label.style.left = (event.clientX + 14) + "px"; label.style.top = (event.clientY + 14) + "px"; }
+  document.querySelectorAll(".calendar-drop-target").forEach((node) => node.classList.remove("calendar-drop-target"));
+  const destination = calendarPointDropDate(event.clientX, event.clientY);
+  const column = document.elementFromPoint(event.clientX, event.clientY)?.closest(".calendar-day-column");
+  if (destination && column) column.classList.add("calendar-drop-target");
+  event.preventDefault();
+}, { passive: false });
+document.addEventListener("pointerup", (event) => {
+  const drag = calendarCtrlDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const destination = drag.started ? calendarPointDropDate(event.clientX, event.clientY) : "";
+  calendarDragCleanup();
+  if (drag.started) {
+    calendarSkipClickUntil = Date.now() + 500;
+    if (destination) calendarCopyEvent(drag.sourceId, drag.occurrenceKey, destination);
+    else showToast("Duplication annulée : déposez l'événement dans une colonne horaire.");
+    event.preventDefault();
+  }
+});
+document.addEventListener("pointercancel", (event) => {
+  if (calendarCtrlDrag?.pointerId === event.pointerId) calendarDragCleanup();
+});
+document.addEventListener("dragstart", (event) => {
+  if (calendarCtrlDrag && event.target.closest("[data-calendar-event]")) event.preventDefault();
+});
+
 document.addEventListener("dblclick", (event) => {
   const calendarEvent = event.target.closest("[data-calendar-event]");
   if (!calendarEvent) return;
