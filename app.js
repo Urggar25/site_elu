@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-contact-fast-v1";
+const ASSET_VERSION = "20261103-emergency-restore-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -147,13 +147,6 @@ let adminUsersLoadAttempted = false;
 let contactByIdCache = null;
 let contactSearchTextCache = new WeakMap();
 let contactQuickSearchTextCache = new WeakMap();
-let contactsFilterResultCache = new Map();
-let savedSearchResultCache = new Map();
-let savedSearchStatisticsCache = new Map();
-let contactKeywordChoicesCache = null;
-let savedSearchesNormalizationCache = { source: null, value: [] };
-let savedSearchVisibleCount = 30;
-let savedSearchStatsRun = 0;
 let adminMutationSnapshot = null;
 let publicStateVersion = "";
 let adminStateVersion = "";
@@ -1783,12 +1776,6 @@ function resetContactLookupCaches() {
   contactByIdCache = null;
   contactSearchTextCache = new WeakMap();
   contactQuickSearchTextCache = new WeakMap();
-  contactsFilterResultCache.clear();
-  savedSearchResultCache.clear();
-  savedSearchStatisticsCache.clear();
-  contactKeywordChoicesCache = null;
-  savedSearchesNormalizationCache = { source: null, value: [] };
-  savedSearchStatsRun++;
 }
 
 function contactById(id = "") {
@@ -2473,7 +2460,6 @@ function renderAdmin() {
     <div id="admin-view">${renderAdminView()}</div>
   </section>`;
   mountDocumentPdfPreview();
-  if (activeAdminSection === "saved-contact-searches") hydrateSavedSearchStatistics();
   if (focusCalendarBodyAfterRender) {
     focusCalendarBodyAfterRender = false;
     requestAnimationFrame(() => document.querySelector("[data-calendar-body]")?.focus());
@@ -3321,8 +3307,6 @@ function normalizedContactKeywordIds(values) {
   return [...new Set(items.map((value) => slugify(value)).filter((value) => value !== "item"))].slice(0, 100);
 }
 function contactKeywordChoices() {
-  if (contactKeywordChoicesCache?.contacts === adminState.localContacts &&
-      contactKeywordChoicesCache?.keywords === adminState.contactKeywords) return contactKeywordChoicesCache.value;
   const choices = new Map();
   normalizeKeywords(adminState.contactKeywords || []).forEach((word) => choices.set(slugify(word.id), { id: slugify(word.id), label: word.label, color: word.color }));
   (adminState.localContacts || []).forEach((contact) => {
@@ -3333,9 +3317,7 @@ function contactKeywordChoices() {
       if (label && id !== "item" && !choices.has(id)) choices.set(id, { id, label, color: "#708199" });
     });
   });
-  const result = [...choices.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
-  contactKeywordChoicesCache = { contacts: adminState.localContacts, keywords: adminState.contactKeywords, value: result };
-  return result;
+  return [...choices.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR") {
   const wanted = normalizedContactKeywordIds(keywordIds);
@@ -3379,9 +3361,8 @@ function contactSearchFilters() {
 
 function normalizeSavedContactSearches(items) {
   if (!Array.isArray(items)) return [];
-  if (savedSearchesNormalizationCache.source === items) return savedSearchesNormalizationCache.value;
   const ids = new Set();
-  const result = items.filter((item) => {
+  return items.filter((item) => {
     if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id || ids.has(item.id)) return false;
     ids.add(item.id);
     return true;
@@ -3394,8 +3375,6 @@ function normalizeSavedContactSearches(items) {
     createdBy: String(item.createdBy || ""),
     sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : []
   })).slice(0, 200);
-  savedSearchesNormalizationCache = { source: items, value: result };
-  return result;
 }
 
 function savedContactSearchFilters(form) {
@@ -3421,73 +3400,22 @@ function savedContactSearchLabel(item) {
 
 function savedSearchContacts(item, searches = normalizeSavedContactSearches(adminState.savedContactSearches), visited = new Set()) {
   if (!item || visited.has(item.id)) return [];
-  const topLevel = visited.size === 0;
-  if (topLevel && savedSearchResultCache.has(item.id)) return savedSearchResultCache.get(item.id);
   const next = new Set(visited);
   next.add(item.id);
-  let results;
   if (item.sourceIds?.length) {
     const byId = new Map(searches.map((entry) => [entry.id, entry]));
     const found = new Map();
     for (const id of item.sourceIds) {
       for (const contact of savedSearchContacts(byId.get(id), searches, next)) found.set(contact.id, contact);
     }
-    results = [...found.values()];
-  } else {
-    const filters = item.filters || {};
-    results = filteredContacts({
-      q: filters.q || "",
-      fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-      keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
-    });
+    return [...found.values()];
   }
-  if (topLevel) savedSearchResultCache.set(item.id, results);
-  return results;
-}
-function savedSearchStatistics(item, searches) {
-  if (savedSearchStatisticsCache.has(item.id)) return savedSearchStatisticsCache.get(item.id);
-  const contacts = savedSearchContacts(item, searches);
-  const summary = savedSearchExportPreview(contacts);
-  const byId = new Map(searches.map((entry) => [entry.id, entry]));
-  const sources = (item.sourceIds || []).map((id) => byId.get(id)).filter(Boolean);
-  const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
-  const value = { contacts: contacts.length, addresses: summary.rows.length, overlaps: overlapCount,
-    people: summary.personDuplicates, addressDuplicates: summary.addressDuplicates,
-    avoided: summary.totalAvoided + overlapCount };
-  savedSearchStatisticsCache.set(item.id, value);
-  return value;
-}
-function hydrateSavedSearchStatistics() {
-  const root = document.querySelector(".saved-contact-searches");
-  if (!root || !root.querySelector("[data-saved-search-stats]")) return;
-  const generation = ++savedSearchStatsRun;
-  const stateAtStart = adminState;
-  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
-  const byId = new Map(searches.map((item) => [item.id, item]));
-  const pending = [...root.querySelectorAll("[data-saved-search-stats]")];
-  let cursor = 0;
-  const tick = () => {
-    if (generation !== savedSearchStatsRun || adminState !== stateAtStart || !root.isConnected) return;
-    // One heavy calculation per idle task; keeps the main UI navigable.
-    while (cursor < pending.length) {
-      const element = pending[cursor++];
-      if (!element.isConnected) continue;
-      const item = byId.get(element.dataset.savedSearchStats);
-      if (!item) continue;
-      const stats = savedSearchStatistics(item, searches);
-      element.textContent = savedContactSearchLabel(item) + " · " + stats.contacts +
-        " contacts · " + stats.addresses + " adresses · " + stats.avoided +
-        " doublon(s) évité(s) (" + stats.overlaps + " entre recherches, " +
-        stats.people + " personnes, " + stats.addressDuplicates + " adresses)";
-      break;
-    }
-    if (cursor < pending.length) {
-      if (typeof requestIdleCallback === "function") requestIdleCallback(tick, { timeout: 1000 });
-      else setTimeout(tick, 50);
-    }
-  };
-  if (typeof requestIdleCallback === "function") requestIdleCallback(tick, { timeout: 1000 });
-  else setTimeout(tick, 50);
+  const filters = item.filters || {};
+  return filteredContacts({
+    q: filters.q || "",
+    fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
+    keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
+  });
 }
 
 function savedSearchExportPreview(contacts) {
@@ -3580,31 +3508,26 @@ function mergeSavedContactSearches() {
 function renderSavedContactSearches({ standalone = false } = {}) {
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const current = adminFilters.activeSavedContactSearchId || "";
-  const shown = searches.slice(0, savedSearchVisibleCount);
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
       <div><h3>Recherche sauvegardée</h3><p>Regroupez plusieurs listes (OU), exportez un fichier Excel avec une ligne par adresse, sans modifier les contacts d'origine.</p></div>
       ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
-    ${searches.length ? `<div class="saved-contact-searches-list">${shown.map((item) => {
-      const stats = savedSearchStatisticsCache.get(item.id);
-      const label = stats
-        ? savedContactSearchLabel(item) + " · " + stats.contacts + " contacts · " + stats.addresses +
-          " adresses · " + stats.avoided + " doublon(s) évité(s) (" + stats.overlaps +
-          " entre recherches, " + stats.people + " personnes, " + stats.addressDuplicates + " adresses)"
-        : "Calcul des statistiques…";
+    ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
+      const contacts = savedSearchContacts(item, searches);
+      const summary = savedSearchExportPreview(contacts);
+      const sources = item.sourceIds?.map((id) => searches.find((source) => source.id === id)).filter(Boolean) || [];
+      const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
         <label title="Inclure cette recherche dans une fusion"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Fusionner ${attr(item.name)}" /></label>
         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-          <strong>${text(item.name)}</strong><small data-saved-search-stats="${attr(item.id)}">${text(label)}</small>
+          <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${contacts.length} contacts · ${summary.rows.length} adresses · ${summary.totalAvoided + overlapCount} doublon(s) évité(s) (${overlapCount} entre recherches, ${summary.personDuplicates} personnes, ${summary.addressDuplicates} adresses)</small>
         </button>
         <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel</button>
         ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
         <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}">Supprimer</button>
       </div>`;
-    }).join("")}</div>
-    ${searches.length > shown.length ? `<button type="button" class="secondary-action compact saved-search-more" data-saved-search-more>Afficher 30 recherches supplémentaires (${searches.length - shown.length} restantes)</button>` : ""}
-    <button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+    }).join("")}</div><button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3704,29 +3627,8 @@ function filteredContacts(filters = contactSearchFilters()) {
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
     if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
   }
-  const cacheKey = JSON.stringify({
-    q: filters.q || "", fields: filters.fields || {},
-    keywordIds: normalizedContactKeywordIds(filters.keywordIds),
-    keywordMode: filters.keywordMode === "AND" ? "AND" : "OR"
-  });
-  if (contactsFilterResultCache.has(cacheKey)) return contactsFilterResultCache.get(cacheKey);
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  const query = filters.q ? normalizeName(filters.q) : "";
-  const activeFields = Object.entries(filters.fields || {}).map(([id, value]) => [fieldsById.get(id), value]).filter(([field, value]) => field && String(value || "").trim());
-  const keywordIds = normalizedContactKeywordIds(filters.keywordIds);
-  const andKeywords = filters.keywordMode === "AND";
-  const matching = (adminState.localContacts || []).filter((contact) => {
-    if (query && !contactSearchText(contact).includes(query)) return false;
-    if (keywordIds.length) {
-      const raw = Array.isArray(contact.keywords) ? contact.keywords : String(contact.keywords || "").split(/[,;]/);
-      const actual = new Set(raw.map(slugify));
-      if (!(andKeywords ? keywordIds.every((id) => actual.has(id)) : keywordIds.some((id) => actual.has(id)))) return false;
-    }
-    return activeFields.every(([field, value]) => contactMatchesDynamicFilter(contact, field, value));
-  });
-  if (contactsFilterResultCache.size >= 80) contactsFilterResultCache.delete(contactsFilterResultCache.keys().next().value);
-  contactsFilterResultCache.set(cacheKey, matching);
-  return matching;
+  return adminState.localContacts.filter((contact) => contactMatchesFilters(contact, filters, fieldsById));
 }
 
 function isAllFilteredContactSelectionActive(filters = contactSearchFilters()) {
@@ -4554,7 +4456,7 @@ function renderContacts() {
       </form>
       <div class="contact-saved-popover-wrap">
         <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
-        <div id="contact-saved-popover" class="contact-saved-popover" hidden></div>
+        <div id="contact-saved-popover" class="contact-saved-popover" hidden>${renderSavedContactSearches()}</div>
       </div>
     </section>
     <div class="admin-split contact-split">
@@ -8273,13 +8175,7 @@ document.addEventListener("click", async (event) => {
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
   if (savedToggle) {
     const menu = document.querySelector("#contact-saved-popover");
-    if (menu) {
-      if (menu.hidden && !menu.childElementCount) menu.innerHTML = renderSavedContactSearches();
-      menu.hidden = !menu.hidden;
-      savedToggle.setAttribute("aria-expanded", String(!menu.hidden));
-      if (!menu.hidden) hydrateSavedSearchStatistics();
-      else savedSearchStatsRun++;
-    }
+    if (menu) { menu.hidden = !menu.hidden; savedToggle.setAttribute("aria-expanded", String(!menu.hidden)); }
     return;
   }
   const savedPopover = document.querySelector("#contact-saved-popover");
@@ -8963,21 +8859,6 @@ document.addEventListener("click", async (event) => {
   if (contactSaveSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
     if (form) saveContactSearch(form);
-    return;
-  }
-  if (event.target.closest("[data-saved-search-more]")) {
-    const root = event.target.closest(".saved-contact-searches");
-    if (root) {
-      const checked = [...root.querySelectorAll("[data-saved-search-merge]:checked")].map((field) => field.value);
-      const standalone = activeAdminSection === "saved-contact-searches";
-      savedSearchVisibleCount = Math.min(200, savedSearchVisibleCount + 30);
-      root.outerHTML = renderSavedContactSearches({ standalone });
-      const selected = new Set(checked);
-      document.querySelectorAll("[data-saved-search-merge]").forEach((field) => {
-        if (selected.has(field.value)) field.checked = true;
-      });
-      hydrateSavedSearchStatistics();
-    }
     return;
   }
   const contactLoadSearch = event.target.closest("[data-contact-load-search]");
