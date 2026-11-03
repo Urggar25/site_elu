@@ -7775,7 +7775,7 @@ document.addEventListener("click", async (event) => {
     const source = calendarOccurrenceSource(calendarDuplicate.dataset.calendarDuplicate, selectedCalendarOccurrenceKey);
     if (source) {
       const target = prompt("Nouvelle date et heure (AAAA-MM-JJTHH:MM)", String(source.startAt).slice(0, 16));
-      if (target && /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(target) && !Number.isNaN(new Date(target).getTime())) {
+      if (target && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(target) && !Number.isNaN(new Date(target).getTime())) {
         calendarCopyEvent(source.id, selectedCalendarOccurrenceKey, target);
       } else if (target) showToast("Date ou heure invalide.");
     }
