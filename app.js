@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-mail-campaigns-v1";
+const ASSET_VERSION = "20261103-calendar-contact-links-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -354,7 +354,7 @@ function normalizeAdminState(value) {
   const remapContactId = (id) => contactIdMap.get(id) || id;
   const permanenceRequests = normalizePermanence(value.permanenceRequests || []).map((item) => ({ ...item, contactId: remapContactId(item.contactId) }));
   const teamTasks = normalizeTasks(value.teamTasks || []).map((item) => ({ ...item, linkedContactId: remapContactId(item.linkedContactId) }));
-  const calendarEvents = normalizeCalendarEvents(value.calendarEvents || []);
+  const calendarEvents = normalizeCalendarEvents(value.calendarEvents || []).map((item) => ({ ...item, contactIds: [...new Set(item.contactIds.map(remapContactId))] }));
   const deathCases = (Array.isArray(value.deathCases) ? value.deathCases : []).map((item) => ({
     ...item,
     id: item.id || crypto.randomUUID(),
@@ -529,6 +529,7 @@ function normalizeCalendarEvents(items) {
       startAt,
       endAt,
       location: String(item.location || "").slice(0, 240),
+      contactIds: [...new Set((Array.isArray(item.contactIds) ? item.contactIds : item.contactId ? [item.contactId] : []).filter((id) => typeof id === "string" && id.trim()).map(String))],
       body: String(item.body || item.description || "").slice(0, 12000),
       createdBy: String(item.createdBy || ""),
       createdByName: String(item.createdByName || ""),
@@ -1002,7 +1003,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
-  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases"];
+  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
   if (normalized.includes("mot cle contact")) return ["contactKeywords"];
   if (normalized.includes("dossier deces")) return ["deathCases", "localContacts"];
@@ -3121,6 +3122,7 @@ function renderCalendarTimedEvent(item) {
     <time>${text(calendarTimeLabel(item.startAt))} – ${text(calendarTimeLabel(item.endAt))}</time>
     <strong>${text(item.title)}</strong>
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
+    ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
 }
 
@@ -3155,7 +3157,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}"><time>${text(calendarTimeLabel(item.startAt))}</time>${text(item.title)}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}"><time>${text(calendarTimeLabel(item.startAt))}</time>${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3176,6 +3178,30 @@ function calendarDraftEvent() {
   };
 }
 
+
+function calendarLinkedContactIds(item = {}) {
+  return [...new Set((item.contactIds || []).filter((id) => contactById(id)))];
+}
+function calendarLinkedContactMarkup(ids) {
+  return ids.map((id) => {
+    const contact = contactById(id);
+    return contact ? `<div class="calendar-contact-chip">
+      <button type="button" class="calendar-contact-open" data-calendar-open-contact="${attr(id)}" title="Ouvrir la fiche contact">${text(contactDisplayName(contact))}${contact.city ? ` · ${text(contact.city)}` : ""}</button>
+      <input type="hidden" name="contactIds" value="${attr(id)}" />
+      <button type="button" class="calendar-contact-unlink" data-calendar-unlink-contact="${attr(id)}" aria-label="Retirer ${attr(contactDisplayName(contact))} de cet événement">×</button>
+    </div>` : "";
+  }).join("");
+}
+function updateCalendarContactSearch(form) {
+  const input = form?.querySelector("[data-calendar-contact-query]");
+  const results = form?.querySelector("[data-calendar-contact-results]");
+  if (!input || !results) return;
+  const selected = [...form.querySelectorAll('[name="contactIds"]')].map((element) => element.value);
+  const matches = searchContacts(input.value, { limit: 12, excludeIds: selected });
+  results.innerHTML = input.value.trim().length < 2 ? '<small>Saisissez au moins deux caractères pour rechercher un contact.</small>' :
+    matches.length ? matches.map((contact) => `<button type="button" data-calendar-add-contact="${attr(contact.id)}" class="calendar-contact-result"><strong>${text(contactDisplayName(contact))}</strong><small>${text([contact.city, contact.email, contact.organization].filter(Boolean).join(" · "))}</small></button>`).join("") :
+    '<small>Aucun contact correspondant.</small>';
+}
 function renderCalendarEditor(item) {
   const isNew = !item.id;
   return `<aside class="calendar-editor" aria-label="${isNew ? "Nouvel événement" : "Modifier l’événement"}">
@@ -3186,6 +3212,11 @@ function renderCalendarEditor(item) {
       <label>Lieu<input name="location" value="${attr(item.location)}" maxlength="240" placeholder="Lieu ou adresse" /></label>
       <label>Description<textarea name="body" data-calendar-body rows="9" placeholder="Ajoutez ici les informations utiles…">${text(item.body)}</textarea></label>
       <label>Couleur<select name="color"><option value="blue" ${item.color === "blue" ? "selected" : ""}>Bleu</option><option value="red" ${item.color === "red" ? "selected" : ""}>Rouge</option><option value="green" ${item.color === "green" ? "selected" : ""}>Vert</option><option value="purple" ${item.color === "purple" ? "selected" : ""}>Violet</option></select></label>
+      <fieldset class="calendar-contact-fieldset"><legend>Contacts associés</legend><p class="calendar-contact-help">Liez plusieurs contacts à cet événement. Cliquez sur un nom pour ouvrir sa fiche.</p>
+        <div class="calendar-contact-chips" data-calendar-contact-chips>${calendarLinkedContactMarkup(calendarLinkedContactIds(item))}</div>
+        <label>Rechercher un contact<input data-calendar-contact-query type="search" autocomplete="off" placeholder="Nom, prénom, commune, organisation..." /></label>
+        <div class="calendar-contact-results" data-calendar-contact-results><small>Saisissez au moins deux caractères pour rechercher un contact.</small></div>
+      </fieldset>
       <label>Ajouté par<input value="${attr(calendarEventCreator(item))}" readonly /></label>
       <button class="primary-action" type="submit">${isNew ? "Ajouter l’événement" : "Enregistrer"}</button>
       ${!isNew && isAdmin() ? `<button class="secondary-action danger" type="button" data-calendar-delete="${attr(item.id)}">${localIcon("trash")} Supprimer</button>` : ""}
@@ -3229,6 +3260,7 @@ function saveCalendarEvent(form) {
     location: String(data.get("location") || "").trim().slice(0, 240),
     body: String(data.get("body") || "").slice(0, 12000),
     color: data.get("color") || "blue",
+    contactIds: [...new Set(data.getAll("contactIds").map(String).filter((id) => contactById(id)))],
     createdBy: previous?.createdBy || currentUserId,
     createdByName: previous?.createdByName || userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: previous?.createdAt || now,
@@ -3639,7 +3671,8 @@ function renderContactImportLoading() {
 function renderContactForm(contact) {
   const localCases = adminState.permanenceRequests.filter((item) => item.contactId === contact.id);
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
@@ -5431,6 +5464,7 @@ function updateContactReferences(previousId, nextId) {
   if (!previousId || !nextId || previousId === nextId) return;
   adminState.permanenceRequests.forEach((item) => { if (item.contactId === previousId) item.contactId = nextId; });
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
+  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); });
   adminState.deathCases.forEach((item) => {
     if (item.deceasedId === previousId) item.deceasedId = nextId;
     (item.relatives || []).forEach((relative) => { if (relative.contactId === previousId) relative.contactId = nextId; });
@@ -5441,6 +5475,7 @@ function clearDeletedContactReferences(ids) {
   const deleted = new Set(ids);
   adminState.permanenceRequests.forEach((item) => { if (deleted.has(item.contactId)) item.contactId = ""; });
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
+  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); });
   adminState.deathCases.forEach((item) => {
     if (deleted.has(item.deceasedId)) item.deceasedId = "";
     item.relatives = (item.relatives || []).filter((relative) => !deleted.has(relative.contactId));
@@ -7447,6 +7482,36 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const calendarOpenContact = event.target.closest("[data-calendar-open-contact]");
+  if (calendarOpenContact) {
+    const id = calendarOpenContact.dataset.calendarOpenContact;
+    if (contactById(id)) {
+      selectedContactId = id;
+      adminFilters.contacts = { perPage: contactSearchFilters().perPage, page: 1 };
+      clearContactSelection();
+      activeAdminSection = "contacts";
+      renderAdmin();
+    }
+    return;
+  }
+  const calendarAddContact = event.target.closest("[data-calendar-add-contact]");
+  if (calendarAddContact) {
+    const form = calendarAddContact.closest("[data-calendar-save]");
+    const chips = form?.querySelector("[data-calendar-contact-chips]");
+    const id = calendarAddContact.dataset.calendarAddContact;
+    if (chips && contactById(id) && ![...form.querySelectorAll('[name="contactIds"]')].some((field) => field.value === id)) {
+      chips.insertAdjacentHTML("beforeend", calendarLinkedContactMarkup([id]));
+      updateCalendarContactSearch(form);
+    }
+    return;
+  }
+  const calendarUnlinkContact = event.target.closest("[data-calendar-unlink-contact]");
+  if (calendarUnlinkContact) {
+    const form = calendarUnlinkContact.closest("[data-calendar-save]");
+    calendarUnlinkContact.closest(".calendar-contact-chip")?.remove();
+    updateCalendarContactSearch(form);
+    return;
+  }
   const calendarViewButton = event.target.closest("[data-calendar-view]");
   if (calendarViewButton) {
     calendarView = calendarViewButton.dataset.calendarView || "week";
@@ -7562,6 +7627,18 @@ document.addEventListener("click", async (event) => {
   if (openTeamFolder) { selectedTeamFolderId = openTeamFolder.dataset.openTeamFolder; renderAdmin(); return; }
   const contactTeamFolder = event.target.closest("[data-open-contact-team-folder]");
   if (contactTeamFolder) { selectedTeamFolderId = contactTeamFolder.dataset.openContactTeamFolder; activeAdminSection = "tasks"; renderAdmin(); return; }
+  const contactCalendarEvent = event.target.closest("[data-open-contact-calendar-event]");
+  if (contactCalendarEvent) {
+    const item = adminState.calendarEvents.find((entry) => entry.id === contactCalendarEvent.dataset.openContactCalendarEvent);
+    if (item) {
+      selectedCalendarEventId = item.id;
+      calendarCursor = String(item.startAt).slice(0, 10);
+      calendarView = "day";
+      activeAdminSection = "calendar";
+      renderAdmin();
+    }
+    return;
+  }
   const contactLocalCase = event.target.closest("[data-open-contact-local-case]");
   if (contactLocalCase) { selectedPermanenceId = contactLocalCase.dataset.openContactLocalCase; activeAdminSection = "permanence"; renderAdmin(); return; }
   if (event.target.closest("[data-close-team-folder]")) { selectedTeamFolderId = ""; renderAdmin(); return; }
@@ -8165,6 +8242,7 @@ document.addEventListener("dblclick", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-calendar-contact-query]")) { updateCalendarContactSearch(event.target.closest("[data-calendar-save]")); return; }
   if (event.target.matches("[data-trombi-contact-search]")) {
     refreshTrombinoscopeContactSearch(event.target.closest("[data-trombi-contact-linker]"));
     return;

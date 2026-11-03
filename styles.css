@@ -11275,3 +11275,21 @@ body.admin-mode .trombinoscope-linked-contact button { border: 0; background: no
 .mail-history-item div { display: grid; gap: .3rem; min-width: 0; }
 .mail-history-item small { color: #63758c; overflow-wrap: anywhere; }
 @media(max-width: 850px) { .mail-columns { grid-template-columns: 1fr; } .mail-workspace { padding: .8rem; } .mail-history-item { flex-wrap: wrap; } }
+
+/* Liens bidirectionnels entre contacts et événements de l'agenda */
+.calendar-contact-fieldset { min-width: 0; border: 1px solid #d9e2ef; border-radius: 12px; padding: .8rem; display: grid; gap: .65rem; }
+.calendar-contact-fieldset legend { font-weight: 700; padding: 0 .3rem; }
+.calendar-contact-help { margin: 0; color: #57677e; font-size: .86rem; line-height: 1.45; }
+.calendar-contact-chips { display: flex; gap: .45rem; flex-wrap: wrap; }
+.calendar-contact-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid #b8cde6; background: #eef5ff; border-radius: 9px; }
+.calendar-contact-open { color: #154a83; border: 0; background: none; text-align: left; padding: .45rem .55rem; cursor: pointer; overflow-wrap: anywhere; }
+.calendar-contact-unlink { border: 0; border-left: 1px solid #b8cde6; color: #9e3646; background: none; cursor: pointer; font-size: 1.1rem; padding: .35rem .55rem; align-self: stretch; }
+.calendar-contact-results { display: grid; gap: .3rem; max-height: 220px; overflow-y: auto; }
+.calendar-contact-results > small { color: #65768d; }
+.calendar-contact-result { display: grid; gap: .1rem; text-align: left; padding: .6rem .7rem; border: 1px solid #d9e2ef; border-radius: 8px; background: #fff; cursor: pointer; }
+.calendar-contact-result:hover, .calendar-contact-result:focus-visible { border-color: #5d8fca; background: #f2f7ff; }
+.calendar-contact-result small { color: #66768a; overflow-wrap: anywhere; }
+.contact-linked-calendar { display: grid; gap: .45rem; }
+.contact-linked-calendar button { text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.calendar-contact-count { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; font-weight: 600; }
+@media (max-width: 600px) { .calendar-contact-chip { width: 100%; } .calendar-contact-open { flex: 1; } }
