@@ -179,12 +179,16 @@ function renderDirectory() {
   const current=filtered.find(x=>x.id===selectedId)||filtered[0];
   if(current)selectedId=current.id;
   const mayor=all.find(p=>p.id===current?.mayorContactId);
-  const deputies=all.filter(p=>p.institutionId===current?.id && (Array.isArray(p.mandates)&&p.mandates.some(m=>m.role==="adjoint"&&m.active)||tagged(p,"adjoint")));
+  const deputies=all.filter(p=>current && ((current.deputyContactIds||[]).includes(p.id) ||
+    (p.institutionId===current.id && ((Array.isArray(p.mandates)&&p.mandates.some(m=>m.role==="adjoint"&&m.active))||tagged(p,"adjoint")))));
+  const former=all.filter(p=>current && Array.isArray(p.mandates) && p.mandates.some(m=>m.institutionId===current.id&&m.role==="maire"&&!m.active));
   const available=current ? all.filter(p=>cleanTown(p.city)===cleanTown(current.city)).slice(0,600) : [];
   return `<div class="institutions-page"><section class="admin-panel"><h2>Institutions · Mairies</h2>
     <p>${institutions().length} institution(s). Une mairie est une structure indépendante du maire actuellement en fonction.</p>
     <input type="search" data-institution-search placeholder="Rechercher une commune ou une mairie" value="${escape(query)}"/>
     <button type="button" class="secondary-action" data-admin-section="institution-migration">Réorganisation automatique</button>
+    <div class="institution-create"><input type="text" data-institution-new-town placeholder="Commune d'une nouvelle mairie" aria-label="Commune de la mairie à créer" />
+    <button type="button" class="secondary-action compact" data-institution-create ${!isAdmin()?"disabled":""}>Créer une mairie</button></div>
     </section><div class="institutions-layout"><section class="admin-panel institutions-list">
     ${filtered.slice(0,250).map(i=>`<button type="button" class="${i.id===current?.id?"active":""}" data-institution-select="${escape(i.id)}">${escape(i.name)}</button>`).join("")||"Aucune mairie enregistrée."}
     ${filtered.length>250?"<small>250 premiers résultats : affinez la recherche.</small>":""}</section>
@@ -193,12 +197,24 @@ function renderDirectory() {
       <p>✉ ${escape(current.email||"Non renseigné")} · ☎ ${escape(current.phone||"Non renseigné")}</p>
       <p><strong>Maire actuel :</strong> ${mayor ? escape(display(mayor)) : "Non renseigné"}</p>
       <p><strong>Adjoints liés :</strong> ${deputies.length ? deputies.map(p=>escape(display(p))).join(", ") : "Aucun adjoint associé"}</p>
+      <p><strong>Anciens maires :</strong> ${former.length ? former.map(p=>escape(display(p))).join(", ") : "Aucun mandat historique enregistré"}</p>
       <label>Modifier le maire actuel
         <select data-institution-mayor="${escape(current.id)}" ${!isAdmin()?"disabled":""}>
           <option value="">Non renseigné</option>
           ${available.map(p=>`<option value="${escape(p.id)}" ${p.id===mayor?.id?"selected":""}>${escape(display(p))}</option>`).join("")}
         </select></label>
       <small>Le changement de maire conserve l'historique des mandats. Il retire le mot-clé « maire » à l'ancien titulaire et l'attribue au nouveau.</small>
+      <details><summary>Modifier les coordonnées institutionnelles</summary>
+        <div class="institution-edit">
+          <label>Nom de l'institution<input data-institution-field="name" value="${escape(current.name)}"/></label>
+          <label>Numéro<input data-institution-field="streetNumber" value="${escape(current.streetNumber||"")}"/></label>
+          <label>Rue<input data-institution-field="streetNameFull" value="${escape(current.streetNameFull||current.streetName||"")}"/></label>
+          <label>Code postal<input data-institution-field="postalCode" value="${escape(current.postalCode||"")}"/></label>
+          <label>Téléphone<input data-institution-field="phone" value="${escape(current.phone||"")}"/></label>
+          <label>Email<input type="email" data-institution-field="email" value="${escape(current.email||"")}"/></label>
+          <button type="button" class="primary-action compact" data-institution-save="${escape(current.id)}" ${!isAdmin()?"disabled":""}>Enregistrer les coordonnées</button>
+        </div>
+      </details>
       <p><button type="button" class="secondary-action" data-institution-export>Exporter les institutions en CSV</button></p>
     </section>`:""}</div></div>`;
 }
@@ -251,6 +267,41 @@ async function changeMayor(id,personId) {
   }catch(e){adminState=normalizeAdminState(previous);resetContactLookupCaches();showToast(e.message);}
   finally{busy=false;renderAdmin();}
 }
+async function createInstitution() {
+  if(busy||!isAdmin())return;
+  const input=document.querySelector("[data-institution-new-town]");
+  const city=String(input?.value||"").trim().slice(0,130);
+  const town=cleanTown(city);
+  if(!town){showToast("Indiquez une commune.");return;}
+  if(institutions().some(x=>cleanTown(x.city)===town)){showToast("Cette mairie existe déjà.");return;}
+  const previous=cloneAdminState(),now=new Date().toISOString();
+  const id="mairie-"+town.replace(/ /g,"-");
+  if(institutions().some(x=>x.id===id)){showToast("Identifiant déjà utilisé.");return;}
+  busy=true;
+  adminState.institutions=[...institutions(),{id,kind:"mairie",name:"Mairie de "+city,city,
+    mayorContactId:"",deputyContactIds:[],createdAt:now,updatedAt:now}];
+  selectedId=id;
+  try{if(!await saveAdminStateToDatabaseOnly("creation","institution",city,previous))showToast("Création non enregistrée.");}
+  catch(error){adminState=normalizeAdminState(previous);resetContactLookupCaches();showToast(error.message||"Création impossible.");}
+  finally{busy=false;renderAdmin();}
+}
+async function saveInstitutionDetails(id,button) {
+  if(busy||!isAdmin())return;
+  const entry=institutions().find(i=>i.id===id);
+  const root=button.closest(".institution-edit");
+  if(!entry||!root)return;
+  const data={};
+  root.querySelectorAll("[data-institution-field]").forEach(input=>{
+    data[input.dataset.institutionField]=String(input.value||"").trim().slice(0,250);
+  });
+  if(!data.name){showToast("Le nom ne peut pas être vide.");return;}
+  const previous=cloneAdminState();
+  busy=true;
+  adminState.institutions=institutions().map(i=>i.id===id?{...i,...data,updatedAt:new Date().toISOString()}:i);
+  try{if(!await saveAdminStateToDatabaseOnly("modification","institution",entry.city,previous))showToast("Coordonnées non enregistrées.");}
+  catch(error){adminState=normalizeAdminState(previous);resetContactLookupCaches();showToast(error.message||"Enregistrement impossible.");}
+  finally{busy=false;renderAdmin();}
+}
 async function restore(file) {
   if(!file||!isAdmin())return;
   if(file.size>40*1024*1024){showToast("Fichier trop volumineux.");return;}
@@ -282,6 +333,9 @@ document.addEventListener("click",(event)=>{
     const selected=event.target.closest("[data-institution-select]");
     if(selected){selectedId=selected.dataset.institutionSelect;renderAdmin();return;}
     if(event.target.closest("[data-institution-export]")){exportInstitutions();return;}
+    if(event.target.closest("[data-institution-create]")){createInstitution();return;}
+    const save=event.target.closest("[data-institution-save]");
+    if(save){saveInstitutionDetails(save.dataset.institutionSave,save);return;}
   }
 });
 document.addEventListener("change",(event)=>{
