@@ -34,3 +34,6 @@
 
 27. L'attribution des événements se stocke dans `calendarEvents[].assignedUserIds` (IDs d'utilisateurs de l'équipe, pas des contacts). Garder l'attribution en place lorsque les événements récurrents sont copiés ; afficher « À moi » uniquement pour l'utilisateur courant.
 28. La duplication Ctrl + glisser utilise les Pointer Events dans les vues Jour/Semaine, détecte le créneau au point de dépôt et aligne sur 15 minutes. L'événement d'origine ne doit jamais être déplacé. Conserver un bouton de duplication alternatif dans l'éditeur, et recopier une occurrence de série comme événement indépendant.
+
+29. Lors d'une copie Ctrl + glisser, la date de dépôt est déduite de l'origine du rectangle de l'événement : soustraire au pointeur la distance à laquelle on a saisi la carte, puis seulement arrondir au quart d'heure. Sans cette compensation la copie est décalée, par exemple de 15 minutes.
+30. Le raccourci Suppr dans l'agenda ne doit agir que sur un événement sélectionné, avec confirmation, si aucune entrée de texte n'a le focus. Une récurrence supprimée retire toute la série. Les couleurs de catégories sont saisissables directement en #RRGGBB ; le sélecteur et le champ hexadécimal restent synchronisés et le fond utilise la couleur exacte, avec un texte contrasté.
