@@ -11317,9 +11317,10 @@ body.admin-mode .calendar-contact-channels a { display: inline-block; }
 /* Catégories d'événements : la couleur du fond et de la bordure provient de la catégorie. */
 body.admin-mode .calendar-event.is-categorized,
 body.admin-mode .calendar-month-event.is-categorized {
-  background: color-mix(in srgb, var(--calendar-category-color) 19%, white);
+  /* La couleur exacte saisie en hexadécimal s'applique au fond. */
+  background: var(--calendar-category-color);
   border-left-color: var(--calendar-category-color);
-  color: #172b44;
+  color: var(--calendar-category-text, #172b44);
 }
 body.admin-mode .calendar-toolbar .calendar-manage-categories { justify-self: end; }
 .calendar-category-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; padding: .5rem .8rem; align-items: center; }
@@ -11356,3 +11357,8 @@ body.admin-mode .calendar-event.calendar-drag-source { opacity: .5; outline: 2px
 
 body.admin-mode .calendar-event .calendar-my-assignment { position: absolute; right: 4px; top: 3px; z-index: 2; white-space: nowrap; font-size: .59rem; padding: 2px 3px; }
 body.admin-mode .calendar-event:has(.calendar-my-assignment) > strong { padding-right: 33px; }
+
+/* Couleur hexadécimale libre : saisie et sélecteur synchronisés */
+.calendar-category-form input[data-calendar-color-hex] { width: 138px; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; letter-spacing: .025em; }
+.calendar-category-form #calendar-hex-help { flex: 1 1 100%; font-size: .78rem; color: #536781; }
+body.admin-mode .calendar-event.is-categorized .calendar-my-assignment { background: #fff1bd; color: #643b04; }
