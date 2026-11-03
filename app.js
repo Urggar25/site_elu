@@ -59,6 +59,7 @@ const adminMenu = {
         ["contact-io", "Import/Export de contact", "contact"],
         ["contact-fields", "Champs contact", "settings"],
         ["keywords", "Mots cles", "settings"],
+        ["adjoint", "Adjoint (temporaire)", "users"],
         ["templates", "Modele de courriers", "doc"],
         ["social", "Reseaux", "settings"],
         ["mobile-menu", "Menu mobile", "settings"],
@@ -2491,6 +2492,7 @@ function renderAdminView() {
   if (activeAdminSection === "campaign-events") return renderCampaignMajorEvents();
   if (activeAdminSection === "photo-library") return renderPhotoLibraryAdmin();
   if (activeAdminSection === "keywords") return renderKeywordsAdmin();
+  if (activeAdminSection === "adjoint") return window.AdjointImporter?.render() || '<section class="admin-panel"><h2>Module adjoint indisponible</h2><p>Actualisez la page.</p></section>';
   if (activeAdminSection === "social") return renderSocialAdmin();
   if (activeAdminSection === "mobile-menu") return renderMobileMenuSettings();
   if (activeAdminSection === "map-settings") return renderMapSettings();
