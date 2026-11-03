@@ -21,3 +21,5 @@
 19. Les branches de secours de connexion doivent rester autonomes et ne pas référencer de variables provenant d'autres formulaires ou fonctions.
 20. Toute image publique configurable doit avoir un état de repli visuel intégré afin qu'un fichier absent ou une ancienne URL enregistrée n'affiche jamais une icône d'image cassée.
 21. Sur mobile, conserver les actions de compte dans le menu déroulant lorsque la barre de compte desktop est masquée ; vérifier en particulier « Connexion » et « Quitter ».
+
+22. Pour les campagnes de mails, garder les clés fournisseur et l'adresse expéditrice dans `api/db.php` privé ; ne jamais les envoyer à l'état administratif public. Construire les listes de destinataires côté serveur à partir des recherches enregistrées et exiger le consentement explicite, la déduplication et la désinscription.
