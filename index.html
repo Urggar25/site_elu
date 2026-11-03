@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Emeric Salmon - Espace parlementaire</title>
+    <meta
+      name="description"
+      content="Site public pour suivre les victoires du groupe RN, l'agenda, le travail législatif et les actualités."
+    />
+    <meta property="og:title" content="Emeric Salmon - Espace parlementaire" />
+    <meta property="og:description" content="Agenda, travail parlementaire, actualités locales et bilan du mandat en Haute-Saône." />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#182f57" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="canonical" href="./" />
+  <link rel="stylesheet" href="styles.css?v=20261008-stable-saves-v3" />
+    <script type="application/ld+json" id="structured-data"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">ES</span>
+        <div>
+          <p class="eyebrow" data-home-text="brandEyebrow">Espace parlementaire</p>
+          <h1 data-home-text="brandName">Emeric Salmon</h1>
+        </div>
+      </div>
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <nav id="main-nav" class="main-nav" aria-label="Navigation principale"></nav>
+      <div id="account-bar" class="account-bar"></div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-content">
+          <p class="eyebrow" data-home-text="heroEyebrow">Député de la 2e circonscription de la Haute-Saône</p>
+          <h2 id="hero-title" data-home-text="heroTitle">À vos côtés, sur le terrain comme à l’Assemblée.</h2>
+          <p data-home-text="heroBody">
+            Emeric Salmon porte la voix des habitants de Haute-Saône, accompagne les projets locaux
+            et défend les enjeux du territoire dans le travail parlementaire.
+          </p>
+          <form id="hero-search-form" class="hero-search" role="search">
+            <input id="global-search" type="search" placeholder="Rechercher une commune, une actualité..." aria-label="Recherche globale" data-home-placeholder="searchPlaceholder" />
+            <button class="primary-action compact" type="submit" data-home-text="searchButton">Rechercher</button>
+          </form>
+        </div>
+        <figure class="hero-portrait">
+          <img id="homepage-portrait" src="assets/emeric-salmon-portrait.jpg" alt="Portrait officiel d’Emeric Salmon" width="512" height="512" />
+          <figcaption>
+            <strong data-home-text="portraitName">Emeric Salmon</strong>
+            <span data-home-text="portraitSubtitle">Haute-Saône</span>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="workspace">
+        <section class="tab-panel is-active home-panel" id="panel-accueil" data-panel="accueil">
+          <div class="section-heading home-heading">
+            <div>
+              <p class="eyebrow" data-home-text="overviewEyebrow">Découvrir le mandat</p>
+              <h2 data-home-text="overviewTitle">Un engagement suivi, à l’Assemblée et en Haute-Saône</h2>
+              <p class="section-intro" data-home-text="overviewIntro">Les accès essentiels et les chiffres du mandat réunis en un seul endroit.</p>
+            </div>
+            <select id="mandate-period" aria-label="Choisir la période du bilan">
+              <option value="30" data-home-text="period30">1 mois</option>
+              <option value="90" data-home-text="period90">3 mois</option>
+              <option value="365" selected data-home-text="period365">1 an</option>
+              <option value="all" data-home-text="periodAll">Depuis le début</option>
+            </select>
+          </div>
+          <div class="home-mandate-grid">
+            <nav class="home-rail" aria-label="Découvrir le mandat">
+              <button class="home-rail-link" type="button" data-panel-target="victoires">
+                <span class="home-rail-icon" aria-hidden="true">V</span>
+                <span><strong data-home-text="victoriesLabel">Victoires</strong><small><b id="victory-count">0</b> <span data-home-text="victoriesMeta">résultats obtenus</span></small></span>
+                <span aria-hidden="true">→</span>
+              </button>
+              <button class="home-rail-link" type="button" data-panel-target="agenda">
+                <span class="home-rail-icon" aria-hidden="true">R</span>
+                <span><strong data-home-text="agendaLabel">Rendez-vous circos</strong><small><b id="agenda-count">0</b> <span data-home-text="agendaMeta">rendez-vous</span></small></span>
+                <span aria-hidden="true">→</span>
+              </button>
+              <button class="home-rail-link" type="button" data-panel-target="legislatif">
+                <span class="home-rail-icon" aria-hidden="true">L</span>
+                <span><strong data-home-text="legislativeLabel">Travail législatif</strong><small><b id="law-count">0</b> <span data-home-text="legislativeMeta">contenus</span></small></span>
+                <span aria-hidden="true">→</span>
+              </button>
+            </nav>
+            <div id="mandate-dashboard" class="mandate-dashboard"></div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-recherche" data-panel="recherche">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Recherche globale</p>
+              <h2>Trouver rapidement une actualité, un dossier ou une commune</h2>
+            </div>
+          </div>
+          <div class="search-console">
+            <input id="search-panel-input" type="search" placeholder="Mot-clé, titre ou commune..." aria-label="Recherche dans le site" />
+            <div class="filters search-filters" id="search-type-filters"></div>
+          </div>
+          <div id="search-results" class="search-results"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-victoires" data-panel="victoires">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Victoires du groupe RN</p>
+              <h2>Frise chronologique des résultats obtenus</h2>
+            </div>
+            <select id="victory-year-filter" aria-label="Filtrer les victoires par année"></select>
+          </div>
+          <div class="timeline" id="victory-timeline"></div>
+        </section>
+
+        <section class="tab-panel photo-library-panel" id="panel-phototheque" data-panel="phototheque">
+          <header class="photo-library-heading">
+            <div>
+              <h2>Photothèque</h2>
+              <p>Retrouvez en images les rencontres, déplacements et temps forts du mandat.</p>
+            </div>
+          </header>
+          <div class="photo-library-search" role="search">
+            <label class="photo-place-search">Commune<input id="photo-place-filter" type="search" placeholder="Rechercher une commune…" autocomplete="off" /></label>
+            <label>Du<input id="photo-date-start" type="date" /></label>
+            <label>Au<input id="photo-date-end" type="date" /></label>
+            <button class="secondary-action" type="button" id="photo-filter-clear">Effacer</button>
+          </div>
+          <nav id="photo-folder-filter" class="photo-folder-filter" aria-label="Dossiers de la photothèque"></nav>
+          <div id="photo-library-results" class="photo-library-results"></div>
+          <nav id="photo-library-pagination" class="photo-library-pagination" aria-label="Pages de la photothèque"></nav>
+        </section>
+
+        <section class="tab-panel" id="panel-agenda" data-panel="agenda">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Mon agenda</p>
+              <h2>Événements classés par année puis par mois</h2>
+            </div>
+            <select id="agenda-year-filter" aria-label="Filtrer l'agenda par année"></select>
+          </div>
+          <div class="agenda-map-layout">
+            <section class="map-panel" aria-labelledby="map-title">
+              <div class="map-heading">
+                <div>
+                  <h3 id="map-title">Fréquentation des communes de Haute-Saône</h3>
+                  <p id="map-color-description">Bleu : au moins un événement. Rouge clair : aucun événement.</p>
+                </div>
+                <div class="map-actions">
+                  <label class="map-gradient-toggle"><input id="map-gradient-toggle" type="checkbox" /> Vue en dégradé</label>
+                  <button class="secondary-action compact" type="button" id="map-zoom-out" aria-label="Dézoomer la carte">-</button>
+                  <button class="secondary-action compact" type="button" id="map-zoom-reset" aria-label="Réinitialiser le zoom">100%</button>
+                  <button class="secondary-action compact" type="button" id="map-zoom-in" aria-label="Zoomer la carte">+</button>
+                  <button class="secondary-action compact" type="button" id="clear-commune-filter">Tout afficher</button>
+                </div>
+              </div>
+              <div id="haute-saone-map" class="haute-saone-map" role="img" aria-label="Carte interactive des communes de Haute-Saône"></div>
+            </section>
+            <aside class="commune-panel">
+              <p class="eyebrow">Commune sélectionnée</p>
+              <h3 id="selected-commune-title">Toutes les communes</h3>
+              <p id="agenda-event-count" class="agenda-event-count" role="status" aria-live="polite">0 événement affiché · toutes les communes</p>
+              <div id="selected-commune-posts" class="commune-posts"></div>
+            </aside>
+          </div>
+          <div id="agenda-admin-filters" class="moderation-panel is-hidden">
+            <label>Du <input id="agenda-date-start" type="date" /></label>
+            <label>Au <input id="agenda-date-end" type="date" /></label>
+            <button class="secondary-action compact" type="button" id="agenda-date-clear">Retirer le filtre</button>
+          </div>
+          <div id="agenda-groups" class="agenda-groups"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-legislatif" data-panel="legislatif">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Travail législatif</p>
+              <h2>Travail parlementaire</h2>
+            </div>
+          </div>
+          <div id="parliament-overview" class="parliament-overview"></div>
+          <div class="content-grid" id="law-grid"></div>
+          <div id="video-library" class="video-library"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-newsletter" data-panel="newsletter">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">S'inscrire aux actualités</p>
+              <h2>Recevoir les nouveaux contenus selon ses centres d'intérêt</h2>
+            </div>
+          </div>
+          <div id="newsletter-auth-gate" class="auth-gate"></div>
+          <form id="newsletter-form" class="newsletter-form is-hidden">
+            <div class="form-grid public-newsletter-fields">
+              <label>Mail <input type="email" name="email" autocomplete="email" /></label>
+              <label>Commune <input name="city" autocomplete="address-level2" /></label>
+            </div>
+            <fieldset>
+              <legend>Catégories souhaitées</legend>
+              <div id="newsletter-categories" class="check-grid"></div>
+            </fieldset>
+            <label>Fréquence
+              <select name="frequency">
+                <option value="Hebdomadaire">Hebdomadaire</option>
+                <option value="Mensuelle">Mensuelle</option>
+                <option value="Immediate">À chaque publication importante</option>
+              </select>
+            </label>
+            <label class="consent">
+              <input type="checkbox" name="consent" required />
+              J'accepte de recevoir les actualités correspondant aux catégories choisies.
+            </label>
+            <button class="primary-action" type="submit">Enregistrer mes préférences</button>
+            <p id="newsletter-feedback" class="feedback" role="status"></p>
+          </form>
+        </section>
+
+        <section class="tab-panel" id="panel-support" data-panel="support">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Support et propositions</p>
+              <h2>Contacter l'équipe ou proposer une amélioration</h2>
+            </div>
+          </div>
+          <div id="support-auth-gate" class="auth-gate"></div>
+          <form id="support-form" class="admin-form is-hidden">
+            <div class="form-grid">
+              <label>Type de demande
+                <select name="type" required>
+                  <option value="Proposition">Proposition d'amélioration</option>
+                  <option value="Support">Contacter le support</option>
+                </select>
+              </label>
+              <label>Sujet <input name="title" required maxlength="140" /></label>
+            </div>
+            <label>Message
+              <textarea name="message" required maxlength="2500"></textarea>
+            </label>
+            <button class="primary-action" type="submit">Envoyer</button>
+            <p id="support-feedback" class="feedback" role="status"></p>
+          </form>
+        </section>
+
+        <section class="tab-panel" id="panel-auth" data-panel="auth">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Compte utilisateur</p>
+              <h2>Connexion et création de compte</h2>
+            </div>
+          </div>
+          <div class="auth-layout">
+            <form id="login-form" class="admin-form">
+              <h3>Se connecter</h3>
+              <label>Email ou login <input name="login" autocomplete="username" required /></label>
+              <label>Mot de passe <input name="password" type="password" autocomplete="current-password" required /></label>
+              <button class="primary-action" type="submit">Connexion</button>
+              <p id="login-feedback" class="feedback" role="status"></p>
+            </form>
+
+            <form id="register-form" class="admin-form">
+              <h3>Créer un compte</h3>
+              <div class="form-grid">
+                <label>Nom <input name="lastName" autocomplete="family-name" required /></label>
+                <label>Prénom <input name="firstName" autocomplete="given-name" required /></label>
+                <label>Commune <input name="city" autocomplete="address-level2" required /></label>
+                <label>Mail <input type="email" name="email" autocomplete="email" required /></label>
+                <label>Téléphone <input type="tel" name="phone" autocomplete="tel" /></label>
+                <label>Login <input name="login" autocomplete="username" required /></label>
+                <label>Mot de passe <input name="password" type="password" autocomplete="new-password" required /></label>
+              </div>
+              <button class="primary-action" type="submit">Créer mon compte</button>
+              <p id="register-feedback" class="feedback" role="status"></p>
+            </form>
+
+            <form id="password-reset-form" class="admin-form">
+              <h3>Mot de passe oublié</h3>
+              <div id="password-reset-confirm" class="is-hidden">
+                <label>Nouveau mot de passe <input name="newPassword" type="password" autocomplete="new-password" minlength="8" /></label>
+              </div>
+              <label>Email du compte <input type="email" name="email" autocomplete="email" required /></label>
+              <button class="secondary-action" type="submit">Recevoir un lien</button>
+              <p id="password-reset-feedback" class="feedback" role="status"></p>
+            </form>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-profile" data-panel="profile">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Mon profil</p>
+              <h2>Mes informations et mes préférences</h2>
+            </div>
+          </div>
+          <div class="profile-tabs" role="tablist" aria-label="Sous menus profil">
+            <button class="profile-tab is-active" type="button" data-profile-tab="infos">Mes informations</button>
+            <button class="profile-tab" type="button" data-profile-tab="requests">Mes propositions</button>
+            <button class="profile-tab" type="button" data-profile-tab="privacy">Confidentialité</button>
+          </div>
+          <div class="profile-screen is-active" data-profile-screen="infos">
+            <form id="profile-form" class="newsletter-form">
+              <div class="form-grid">
+                <label>Nom <input name="lastName" required /></label>
+                <label>Prénom <input name="firstName" required /></label>
+                <label>Commune <input name="city" required /></label>
+                <label>Mail <input type="email" name="email" required readonly /></label>
+                <label>Téléphone <input type="tel" name="phone" /></label>
+              </div>
+              <fieldset>
+                <legend>Mes mots-clés d'actualités</legend>
+                <div id="profile-categories" class="check-grid"></div>
+              </fieldset>
+              <button class="primary-action" type="submit">Mettre à jour mon profil</button>
+              <p id="profile-feedback" class="feedback" role="status"></p>
+            </form>
+          </div>
+          <div class="profile-screen" data-profile-screen="requests">
+            <div id="profile-request-list" class="request-list"></div>
+          </div>
+          <div class="profile-screen" data-profile-screen="privacy">
+            <div id="profile-privacy-panel" class="privacy-panel"></div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-detail" data-panel="detail">
+          <div id="content-detail"></div>
+        </section>
+
+        <section class="tab-panel" id="panel-legal" data-panel="legal">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Informations legales</p>
+              <h2>Mentions, confidentialité et cookies</h2>
+            </div>
+          </div>
+          <div class="legal-grid">
+            <article>
+              <h3>Mentions legales</h3>
+              <p>Ce site présente l'activité parlementaire, les déplacements et les contenus publics liés au mandat.</p>
+            </article>
+            <article>
+              <h3>Données personnelles</h3>
+              <p>Les données de compte, de newsletter et de support servent uniquement au suivi des demandes et communications choisies.</p>
+            </article>
+            <article>
+              <h3>Cookies</h3>
+              <p>Le site utilise le stockage local pour la session, les préférences et le fonctionnement hors base de données en démonstration.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="panel-admin" data-panel="admin">
+          <div id="admin-shell" class="admin-shell" aria-label="Administration interne"></div>
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Administration</p>
+              <h2>Console de pilotage du site</h2>
+            </div>
+          </div>
+
+          <div class="admin-tabs" role="tablist" aria-label="Sous menus administration">
+            <button class="admin-tab is-active" type="button" data-admin-tab="stats">Stats du site</button>
+            <button class="admin-tab" type="button" data-admin-tab="keywords">Mots-clés</button>
+            <button class="admin-tab" type="button" data-admin-tab="content">Creer une actu</button>
+            <button class="admin-tab" type="button" data-admin-tab="social">Reseaux du depute</button>
+            <button class="admin-tab" type="button" data-admin-tab="support">Support et propositions</button>
+            <button class="admin-tab admin-only" type="button" data-admin-tab="users">Utilisateurs</button>
+          </div>
+
+          <div class="admin-screen is-active" data-admin-screen="stats">
+            <div class="stats-grid">
+              <div class="stat-card"><span id="stats-users">0</span><p>inscrits</p></div>
+              <div class="stat-card"><span id="stats-visits">0</span><p>visites du site</p></div>
+              <div class="stat-card"><span id="stats-news">0</span><p>actualités</p></div>
+            </div>
+            <div class="data-panel">
+              <h3>Progression des inscrits</h3>
+              <div id="subscriber-chart" class="bar-chart"></div>
+            </div>
+          </div>
+
+          <div class="admin-screen" data-admin-screen="keywords">
+            <form id="keyword-form" class="admin-form">
+              <h3>Ajouter une categorie de mots cles</h3>
+              <label>Nouveau mot cle <input name="keyword" required /></label>
+              <button class="primary-action" type="submit">Ajouter</button>
+              <p id="keyword-feedback" class="feedback" role="status"></p>
+            </form>
+            <div id="keyword-list" class="keyword-list"></div>
+          </div>
+
+          <div class="admin-screen" data-admin-screen="content">
+            <form id="content-form" class="admin-form">
+              <h3 id="content-form-title">Creer une actualite</h3>
+              <div class="form-grid">
+                <label>Section de publication
+                  <select name="target" id="content-target">
+                    <option value="victory">Victoires du groupe RN</option>
+                    <option value="event">Mon agenda</option>
+                    <option value="law">Travail législatif</option>
+                  </select>
+                </label>
+                <label>Date <input name="date" type="date" required /></label>
+                <label>Titre <input name="title" required /></label>
+                <label class="event-extra">Commune
+                  <input name="commune" list="communes-list" placeholder="Ex. Vesoul" />
+                </label>
+                <label class="event-extra check-line">
+                  <input name="mapVisible" type="checkbox" checked />
+                  Afficher dans la carte par circonscription
+                </label>
+                <label>Image de presentation <input name="image" type="file" accept="image/*" /></label>
+              </div>
+              <fieldset>
+                <legend>Lien du post social</legend>
+                <div class="form-grid">
+                  <label>Facebook <input name="facebookUrl" type="url" placeholder="https://facebook.com/..." /></label>
+                  <label>Twitter / X <input name="twitterUrl" type="url" placeholder="https://x.com/..." /></label>
+                  <label>Instagram <input name="instagramUrl" type="url" placeholder="https://instagram.com/..." /></label>
+                  <label>LinkedIn <input name="linkedinUrl" type="url" placeholder="https://linkedin.com/..." /></label>
+                  <label>TikTok <input name="tiktokUrl" type="url" placeholder="https://tiktok.com/..." /></label>
+                  <label>Lien video <input name="videoUrl" type="url" placeholder="https://youtube.com/..." /></label>
+                </div>
+              </fieldset>
+              <datalist id="communes-list" data-communes-datalist></datalist>
+              <div class="editor-shell">
+                <div class="editor-toolbar">
+                  <button type="button" data-command="bold">B</button>
+                  <button type="button" data-command="italic">I</button>
+                  <button type="button" data-command="insertUnorderedList">Liste</button>
+                </div>
+                <div id="content-editor" class="rich-editor" contenteditable="true" aria-label="Texte de l'actualite"></div>
+              </div>
+              <div class="form-actions">
+                <button class="primary-action" type="submit" id="content-submit-button">Publier l'actualite</button>
+                <button class="secondary-action is-hidden" type="button" id="content-edit-cancel">Annuler la modification</button>
+              </div>
+              <p id="content-feedback" class="feedback" role="status"></p>
+            </form>
+          </div>
+
+          <div class="admin-screen" data-admin-screen="users">
+            <div class="data-panel">
+              <h3>Gestion des utilisateurs</h3>
+              <div id="user-list" class="user-list"></div>
+            </div>
+          </div>
+
+          <div class="admin-screen" data-admin-screen="social">
+            <div class="data-panel">
+              <h3>Reseaux du depute</h3>
+              <form id="social-form" class="admin-form embedded-form">
+                <div class="form-grid">
+                  <label>Assemblée nationale <input name="assembly" type="url" /></label>
+                  <label>Twitter / X <input name="twitter" type="url" /></label>
+                  <label>Facebook <input name="facebook" type="url" /></label>
+                  <label>Instagram <input name="instagram" type="url" /></label>
+                  <label>Threads <input name="threads" type="url" /></label>
+                  <label>TikTok <input name="tiktok" type="url" /></label>
+                </div>
+                <button class="primary-action" type="submit">Enregistrer les reseaux</button>
+                <p id="social-feedback" class="feedback" role="status"></p>
+              </form>
+            </div>
+          </div>
+
+          <div class="admin-screen" data-admin-screen="support">
+            <div class="data-panel">
+              <h3>Demandes recues</h3>
+              <div id="admin-request-list" class="request-list"></div>
+            </div>
+          </div>
+
+          <div class="admin-layout">
+            <div class="data-panel">
+              <h3>Donnees du site</h3>
+              <p>
+                Ces outils exportent ou importent les contenus du site. Les publications d'actualités passent
+                par la base de données quand l'API PHP est disponible.
+              </p>
+              <div class="data-actions">
+                <button class="secondary-action" type="button" id="export-data">Exporter</button>
+                <label class="import-button">
+                  Importer
+                  <input type="file" id="import-data" accept="application/json" />
+                </label>
+              </div>
+              <textarea id="data-output" readonly aria-label="Donnees exportees"></textarea>
+            </div>
+          </div>
+
+          <div id="custom-sections" class="custom-sections"></div>
+        </section>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-left">
+        <div id="footer-social-links" class="footer-social-links" aria-label="Réseaux sociaux"></div>
+        <button class="footer-link" type="button" data-panel-target="legal" data-home-text="footerLegal">Mentions légales et confidentialité</button>
+        <p data-home-text="footerSignature">Emeric Salmon · Député de la Haute-Saône</p>
+      </div>
+      <button class="admin-access" type="button" data-panel-target="admin" data-home-text="adminAccess">Administration</button>
+    </footer>
+    <div id="share-feedback" class="site-toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js?v=20261008-stable-saves-v3"></script>
+  </body>
+</html>

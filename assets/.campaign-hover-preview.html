@@ -1,0 +1,48 @@
+<!doctype html><html><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><body class="admin-mode"><main class="campaign-map-panel" style="max-width:850px;margin:30px auto"><p>Test du survol</p><svg class="campaign-map" viewBox="0 0 1000 700" role="img" aria-label="Carte interactive du fichier GeoJSON"><defs><pattern id="campaign-grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#e7edf4" stroke-width="1" /></pattern><pattern id="campaign-pattern-none" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#eef2f6" />
+      
+      
+    </pattern><pattern id="campaign-pattern-boitage" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#b9def7" />
+      
+      
+    </pattern><pattern id="campaign-pattern-marche" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#eef2f6" />
+      <path d="M3 0V12 M9 0V12" stroke="#d74855" stroke-width="1.6" />
+      
+    </pattern><pattern id="campaign-pattern-boitage-marche" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#b9def7" />
+      <path d="M3 0V12 M9 0V12" stroke="#d74855" stroke-width="1.6" />
+      
+    </pattern><pattern id="campaign-pattern-lettre-parlementaire" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#eef2f6" />
+      
+      <path d="M0 3H12 M0 9H12" stroke="#18845e" stroke-width="1.6" />
+    </pattern><pattern id="campaign-pattern-boitage-lettre-parlementaire" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#b9def7" />
+      
+      <path d="M0 3H12 M0 9H12" stroke="#18845e" stroke-width="1.6" />
+    </pattern><pattern id="campaign-pattern-marche-lettre-parlementaire" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#eef2f6" />
+      <path d="M3 0V12 M9 0V12" stroke="#d74855" stroke-width="1.6" />
+      <path d="M0 3H12 M0 9H12" stroke="#18845e" stroke-width="1.6" />
+    </pattern><pattern id="campaign-pattern-boitage-marche-lettre-parlementaire" width="12" height="12" patternUnits="userSpaceOnUse">
+      <rect width="12" height="12" fill="#b9def7" />
+      <path d="M3 0V12 M9 0V12" stroke="#d74855" stroke-width="1.6" />
+      <path d="M0 3H12 M0 9H12" stroke="#18845e" stroke-width="1.6" />
+    </pattern></defs><rect width="1000" height="700" fill="#f7f9fc" /><rect width="1000" height="700" fill="url(#campaign-grid)" /><g class="campaign-map-feature   " data-campaign-feature="campaign-0-Magny" data-campaign-commune="Magny" data-campaign-count="1" role="button" tabindex="0" aria-label="Magny, 1 inscrit"><title>Magny</title><path d="M50.00 564.29 L478.57 564.29 L478.57 135.71 L50.00 135.71 L50.00 564.29 Z" fill="rgb(20,83,163)" fill-rule="evenodd" /><text x="221.43" y="392.86">Magny</text></g><g class="campaign-map-feature   " data-campaign-feature="campaign-1-Vesoul" data-campaign-commune="Vesoul" data-campaign-count="1" role="button" tabindex="0" aria-label="Vesoul, 1 inscrit"><title>Vesoul</title><path d="M521.43 564.29 L950.00 564.29 L950.00 135.71 L521.43 135.71 L521.43 564.29 Z" fill="rgb(20,83,163)" fill-rule="evenodd" /><text x="692.86" y="392.86">Vesoul</text></g></svg><div id="campaign-map-tooltip" class="campaign-map-tooltip" role="tooltip" hidden></div></main><script>const campaignGradientEnabled=true;function updateCampaignMapTooltip(event) {
+  const tooltip = document.querySelector("#campaign-map-tooltip");
+  if (!tooltip) return;
+  const feature = event.target.closest?.(".campaign-map-feature[data-campaign-commune]");
+  if (!campaignGradientEnabled || event.pointerType === "touch" || !feature?.dataset.campaignCommune) { tooltip.hidden = true; return; }
+  const count = Number(feature.dataset.campaignCount || 0);
+  tooltip.textContent = `${feature.dataset.campaignCommune} · ${count} inscrit${count > 1 ? "s" : ""}`;
+  tooltip.hidden = false;
+  const panel = tooltip.closest(".campaign-map-panel");
+  const bounds = panel.getBoundingClientRect();
+  tooltip.style.left = `${Math.max(8, Math.min(bounds.width - tooltip.offsetWidth - 8, event.clientX - bounds.left + 14))}px`;
+  const above = event.clientY - bounds.top - tooltip.offsetHeight - 12;
+  tooltip.style.top = `${above >= 8 ? above : event.clientY - bounds.top + 16}px`;
+}
+
+document.addEventListener('pointermove',updateCampaignMapTooltip)</script></body></html>

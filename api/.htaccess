@@ -1,0 +1,11 @@
+<Files "config.php">
+  Require all denied
+</Files>
+
+<FilesMatch "^db(\.example)?\.php$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>
