@@ -3122,6 +3122,7 @@ function renderCalendarTimedEvent(item) {
     <time>${text(calendarTimeLabel(item.startAt))} – ${text(calendarTimeLabel(item.endAt))}</time>
     <strong>${text(item.title)}</strong>
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
+    ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
 }
 
@@ -3156,7 +3157,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}"><time>${text(calendarTimeLabel(item.startAt))}</time>${text(item.title)}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}"><time>${text(calendarTimeLabel(item.startAt))}</time>${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
