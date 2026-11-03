@@ -673,6 +673,7 @@ function renderCalendarAttendance(item) {
       <div><strong>${stat.absent}</strong><small>Ne sont pas venus</small></div>
       <div><strong>${stat.pending}</strong><small>À confirmer</small></div>
     </div>
+    <p class="calendar-attendance-explainer">Ajouter une personne signifie qu’elle a indiqué vouloir participer. Vous pourrez ensuite cocher sa présence ou son absence.</p>
     <label>Rechercher un contact à inscrire<input data-attendance-search type="search" autocomplete="off" placeholder="Nom, prénom, commune, téléphone…" /></label>
     <div class="calendar-attendance-results" data-attendance-results><small>Saisissez au moins deux caractères.</small></div>
     <div class="calendar-attendance-list">${entries.map((row) => {
@@ -3480,7 +3481,7 @@ function renderCalendarTimedEvent(item) {
     ${calendarAssignedToMe(item) ? `<span class="calendar-my-assignment" title="Cet événement vous est attribué">★ À moi</span>` : item.assignedUserIds?.length ? `<small class="calendar-assigned-count" title="${attr(calendarAssignmentText(item))}">👥 ${item.assignedUserIds.length}</small>` : ""}
     ${item.recurrence && item.recurrence !== "none" ? `<small>↻ ${text(calendarRecurrenceLabel(item.recurrence))}</small>` : ""}
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
-    ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? `<small>♧ ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered} participant(s)</small>` : ""}
+    ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? `<small>🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered} inscrit(s)</small>` : ""}
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
 }
@@ -3516,7 +3517,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? ` · ♧ ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? ` · 🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
