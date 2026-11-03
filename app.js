@@ -3711,7 +3711,19 @@ function filteredContacts(filters = contactSearchFilters()) {
   });
   if (contactsFilterResultCache.has(cacheKey)) return contactsFilterResultCache.get(cacheKey);
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  const matching = (adminState.localContacts || []).filter((contact) => contactMatchesFilters(contact, filters, fieldsById));
+  const query = filters.q ? normalizeName(filters.q) : "";
+  const activeFields = Object.entries(filters.fields || {}).map(([id, value]) => [fieldsById.get(id), value]).filter(([field, value]) => field && String(value || "").trim());
+  const keywordIds = normalizedContactKeywordIds(filters.keywordIds);
+  const andKeywords = filters.keywordMode === "AND";
+  const matching = (adminState.localContacts || []).filter((contact) => {
+    if (query && !contactSearchText(contact).includes(query)) return false;
+    if (keywordIds.length) {
+      const raw = Array.isArray(contact.keywords) ? contact.keywords : String(contact.keywords || "").split(/[,;]/);
+      const actual = new Set(raw.map(slugify));
+      if (!(andKeywords ? keywordIds.every((id) => actual.has(id)) : keywordIds.some((id) => actual.has(id)))) return false;
+    }
+    return activeFields.every(([field, value]) => contactMatchesDynamicFilter(contact, field, value));
+  });
   if (contactsFilterResultCache.size >= 80) contactsFilterResultCache.delete(contactsFilterResultCache.keys().next().value);
   contactsFilterResultCache.set(cacheKey, matching);
   return matching;
