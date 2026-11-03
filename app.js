@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-contact-details-v1";
+const ASSET_VERSION = "20261103-calendar-visible-contacts-v2";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -3111,6 +3111,14 @@ function calendarTimeLabel(value) {
   return String(value || "").slice(11, 16).replace(":", "h");
 }
 
+function calendarEventContactTooltip(item) {
+  return calendarLinkedContactIds(item).map((id) => {
+    const contact = contactById(id);
+    if (!contact) return "";
+    return [contactDisplayName(contact), contact.mobile, contact.phone, contact.email].filter(Boolean).join(" · ");
+  }).filter(Boolean).join(" | ");
+}
+
 function renderCalendarTimedEvent(item) {
   const start = new Date(item.startAt);
   const end = new Date(item.endAt);
@@ -3118,7 +3126,7 @@ function renderCalendarTimedEvent(item) {
   const duration = Math.max(30, (end.getTime() - start.getTime()) / 60000);
   const top = Math.max(0, startMinutes - 7 * 60);
   const height = Math.max(30, Math.min(duration, 13 * 60 - top));
-  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""}" style="--event-top:${top}px;--event-height:${height}px" type="button" data-calendar-event="${attr(item.id)}" title="${attr(`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)} · Double-cliquez pour modifier`)}">
+  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""}" style="--event-top:${top}px;--event-height:${height}px" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">
     <strong>${text(item.title)}</strong>
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
@@ -3156,7 +3164,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr(`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`)}">${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3233,16 +3241,18 @@ function renderCalendarEditor(item) {
   return `<aside class="calendar-editor" aria-label="${isNew ? "Nouvel événement" : "Modifier l’événement"}">
     <header><div><h3>${isNew ? "Nouvel événement" : "Modifier l’événement"}</h3><p>${isNew ? "Choisissez librement la plage horaire." : "Double-cliquez sur un événement pour modifier son texte."}</p></div><button type="button" data-calendar-close aria-label="Fermer">${localIcon("x")}</button></header>
     <form data-calendar-save="${attr(item.id || "new")}">
-      <label>Titre <span>*</span><input name="title" value="${attr(item.title)}" required maxlength="180" placeholder="Titre de l’événement" /></label>
-      <div class="calendar-editor-range"><label>Début <span>*</span><input name="startAt" type="datetime-local" value="${attr(item.startAt)}" required /></label><label>Fin <span>*</span><input name="endAt" type="datetime-local" value="${attr(item.endAt)}" required /></label></div>
-      <label>Lieu<input name="location" value="${attr(item.location)}" maxlength="240" placeholder="Lieu ou adresse" /></label>
-      <label>Description<textarea name="body" data-calendar-body rows="9" placeholder="Ajoutez ici les informations utiles…">${text(item.body)}</textarea></label>
-      <label>Couleur<select name="color"><option value="blue" ${item.color === "blue" ? "selected" : ""}>Bleu</option><option value="red" ${item.color === "red" ? "selected" : ""}>Rouge</option><option value="green" ${item.color === "green" ? "selected" : ""}>Vert</option><option value="purple" ${item.color === "purple" ? "selected" : ""}>Violet</option></select></label>
+      ${calendarLinkedContactIds(item).length ? `<p class="calendar-contact-summary">${calendarLinkedContactIds(item).length} contact(s) associé(s) — téléphone et email affichés ci-dessous.</p>` : ""}
       <fieldset class="calendar-contact-fieldset"><legend>Contacts associés</legend><p class="calendar-contact-help">Liez plusieurs contacts à cet événement. Cliquez sur un nom pour ouvrir sa fiche.</p>
         <div class="calendar-contact-chips" data-calendar-contact-chips>${calendarLinkedContactMarkup(calendarLinkedContactIds(item))}</div>
         <label>Rechercher un contact<input data-calendar-contact-query type="search" autocomplete="off" placeholder="Nom, prénom, commune, organisation..." /></label>
         <div class="calendar-contact-results" data-calendar-contact-results><small>Saisissez au moins deux caractères pour rechercher un contact.</small></div>
       </fieldset>
+      <label>Titre <span>*</span><input name="title" value="${attr(item.title)}" required maxlength="180" placeholder="Titre de l’événement" /></label>
+      <div class="calendar-editor-range"><label>Début <span>*</span><input name="startAt" type="datetime-local" value="${attr(item.startAt)}" required /></label><label>Fin <span>*</span><input name="endAt" type="datetime-local" value="${attr(item.endAt)}" required /></label></div>
+      <label>Lieu<input name="location" value="${attr(item.location)}" maxlength="240" placeholder="Lieu ou adresse" /></label>
+      <label>Description<textarea name="body" data-calendar-body rows="9" placeholder="Ajoutez ici les informations utiles…">${text(item.body)}</textarea></label>
+      <label>Couleur<select name="color"><option value="blue" ${item.color === "blue" ? "selected" : ""}>Bleu</option><option value="red" ${item.color === "red" ? "selected" : ""}>Rouge</option><option value="green" ${item.color === "green" ? "selected" : ""}>Vert</option><option value="purple" ${item.color === "purple" ? "selected" : ""}>Violet</option></select></label>
+
       <label>Ajouté par<input value="${attr(calendarEventCreator(item))}" readonly /></label>
       <button class="primary-action" type="submit">${isNew ? "Ajouter l’événement" : "Enregistrer"}</button>
       ${!isNew && isAdmin() ? `<button class="secondary-action danger" type="button" data-calendar-delete="${attr(item.id)}">${localIcon("trash")} Supprimer</button>` : ""}
@@ -7538,6 +7548,14 @@ document.addEventListener("click", async (event) => {
     updateCalendarContactSearch(form);
     return;
   }
+  // Un clic suffit pour ouvrir le détail et ses coordonnées : ne pas obliger un double clic.
+  const calendarEventClick = event.target.closest("[data-calendar-event]");
+  if (calendarEventClick) {
+    selectedCalendarEventId = calendarEventClick.dataset.calendarEvent;
+    renderAdmin();
+    return;
+  }
+
   const calendarViewButton = event.target.closest("[data-calendar-view]");
   if (calendarViewButton) {
     calendarView = calendarViewButton.dataset.calendarView || "week";
