@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-visible-contacts-v2";
+const ASSET_VERSION = "20261103-calendar-recurrence-categories-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -241,6 +241,7 @@ function defaultAdminState() {
     permanenceKeywords: [{ id: "commune", label: "commune", color: "#2d6fb6" }],
     teamTasks: [],
     calendarEvents: [],
+    calendarEventCategories: [],
     teamFolders: [{ id: "team-folder-general", name: "Suivi general", description: "Dossiers et actions suivis par l'equipe.", createdAt: now, updatedAt: now }],
     templates: [],
     documents: [],
@@ -413,6 +414,7 @@ function normalizeAdminState(value) {
     permanenceRequests,
     teamTasks,
     calendarEvents,
+    calendarEventCategories: normalizeCalendarEventCategories(value.calendarEventCategories),
     teamFolders,
     localFolders,
     templates: normalizeTemplates(value.templates || []),
@@ -514,6 +516,113 @@ function normalizeCampaign(value) {
   };
 }
 
+
+function normalizeCalendarEventCategories(value) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).filter((item) => item && typeof item === "object").map((item) => ({
+    id: String(item.id || ""),
+    name: String(item.name || "").trim().slice(0, 80),
+    color: /^#[0-9a-fA-F]{6}$/.test(String(item.color || "")) ? String(item.color) : "#3478c0"
+  })).filter((item) => item.id && item.name && !seen.has(item.id) && seen.add(item.id)).slice(0, 100);
+}
+function calendarCategory(item = {}) {
+  return (adminState.calendarEventCategories || []).find((category) => category.id === item.categoryId) || null;
+}
+function calendarCategoryStyle(item = {}) {
+  const category = calendarCategory(item);
+  return category ? `--calendar-category-color:${attr(category.color)};` : "";
+}
+function calendarRecurrenceLabel(recurrence) {
+  return { weekly: "Chaque semaine", monthly: "Chaque mois", yearly: "Chaque année" }[recurrence] || "Une fois";
+}
+function calendarOccurrenceDate(startKey, index, recurrence) {
+  const parts = String(startKey).split("-").map(Number);
+  const year = parts[0], month = parts[1], day = parts[2];
+  if (recurrence === "weekly") return calendarDateKey(calendarAddDays(startKey, index * 7));
+  if (recurrence === "monthly") {
+    const total = year * 12 + month - 1 + index;
+    const y = Math.floor(total / 12), m = total % 12;
+    const maximum = new Date(y, m + 1, 0).getDate();
+    return `${y}-${String(m + 1).padStart(2, "0")}-${String(Math.min(day, maximum)).padStart(2, "0")}`;
+  }
+  if (recurrence === "yearly") {
+    const y = year + index;
+    const maximum = new Date(y, month, 0).getDate();
+    return `${y}-${String(month).padStart(2, "0")}-${String(Math.min(day, maximum)).padStart(2, "0")}`;
+  }
+  return startKey;
+}
+function calendarEventOnDate(item, key) {
+  const anchor = String(item.startAt || "").slice(0, 10);
+  if (!anchor || key < anchor) return null;
+  if (item.recurrenceUntil && key > item.recurrenceUntil) return null;
+  const rule = item.recurrence || "none";
+  let index = 0;
+  if (rule === "none") {
+    if (key !== anchor) return null;
+  } else if (rule === "weekly") {
+    const distance = Math.round((Date.parse(key + "T12:00:00Z") - Date.parse(anchor + "T12:00:00Z")) / 86400000);
+    if (distance % 7 !== 0) return null;
+    index = distance / 7;
+  } else if (rule === "monthly") {
+    const [ay, am] = anchor.split("-").map(Number);
+    const [y, m] = key.split("-").map(Number);
+    index = (y - ay) * 12 + (m - am);
+    if (calendarOccurrenceDate(anchor, index, rule) !== key) return null;
+  } else if (rule === "yearly") {
+    index = Number(key.slice(0, 4)) - Number(anchor.slice(0, 4));
+    if (calendarOccurrenceDate(anchor, index, rule) !== key) return null;
+  } else return null;
+  if (index < 0) return null;
+  if (!index) return item;
+  const startAt = key + String(item.startAt).slice(10);
+  const originalStart = new Date(item.startAt);
+  const originalEnd = new Date(item.endAt);
+  const elapsedDays = Math.round((Date.UTC(originalEnd.getFullYear(), originalEnd.getMonth(), originalEnd.getDate()) - Date.UTC(originalStart.getFullYear(), originalStart.getMonth(), originalStart.getDate())) / 86400000);
+  const endDate = calendarAddDays(key, elapsedDays);
+  const endAt = calendarDateKey(endDate) + String(item.endAt).slice(10);
+  return { ...item, startAt, endAt, occurrenceKey: key, seriesId: item.id };
+}
+function saveCalendarCategory(form) {
+  const values = new FormData(form);
+  const name = String(values.get("name") || "").trim().slice(0, 80);
+  const color = String(values.get("color") || "");
+  if (!name || !/^#[0-9a-fA-F]{6}$/.test(color)) { showToast("Saisissez un nom et une couleur valide."); return; }
+  const items = normalizeCalendarEventCategories(adminState.calendarEventCategories);
+  const editing = items.find((item) => item.id === form.dataset.calendarCategorySave);
+  const id = editing?.id || crypto.randomUUID();
+  adminState.calendarEventCategories = editing ? items.map((item) => item.id === id ? { id, name, color } : item) : [...items, { id, name, color }];
+  adminFilters.calendarCategoryEdit = "";
+  saveAdminState(editing ? "modification catégorie" : "création catégorie", "calendrier", name);
+}
+function deleteCalendarCategory(id) {
+  const category = calendarCategory({ categoryId: id });
+  if (!category || !confirm(`Supprimer la catégorie « ${category.name} » ? Les événements resteront dans l'agenda, sans catégorie.`)) return;
+  adminState.calendarEventCategories = (adminState.calendarEventCategories || []).filter((item) => item.id !== id);
+  adminState.calendarEvents = (adminState.calendarEvents || []).map((item) => item.categoryId === id ? { ...item, categoryId: "" } : item);
+  adminFilters.calendarCategoryEdit = "";
+  saveAdminState("suppression catégorie", "calendrier", category.name);
+}
+function renderCalendarCategoriesManager() {
+  const categories = normalizeCalendarEventCategories(adminState.calendarEventCategories);
+  const editing = categories.find((item) => item.id === adminFilters.calendarCategoryEdit);
+  return `<section class="calendar-categories-manager">
+    <header><h3>Catégories d'événements</h3><button type="button" class="secondary-action compact" data-calendar-categories-close>Fermer</button></header>
+    <div class="calendar-categories-list">${categories.map((category) => `<div class="calendar-category-row">
+      <span class="calendar-category-dot" style="background:${attr(category.color)}"></span>
+      <strong>${text(category.name)}</strong>
+      <button type="button" class="secondary-action compact" data-calendar-category-edit="${attr(category.id)}">Modifier</button>
+      <button type="button" class="secondary-action compact danger" data-calendar-category-delete="${attr(category.id)}">Supprimer</button>
+    </div>`).join("") || "<p>Aucune catégorie pour le moment.</p>"}</div>
+    <form data-calendar-category-save="${attr(editing?.id || "new")}" class="calendar-category-form">
+      <label>Nom de la catégorie <input name="name" required maxlength="80" value="${attr(editing?.name || "")}" placeholder="Ex. Permanences, réunions, visites..." /></label>
+      <label>Couleur <input name="color" type="color" value="${attr(editing?.color || "#3478c0")}" /></label>
+      <button type="submit" class="primary-action compact">${editing ? "Enregistrer" : "Ajouter la catégorie"}</button>
+      ${editing ? '<button type="button" data-calendar-category-new class="secondary-action compact">Annuler</button>' : ""}
+    </form>
+  </section>`;
+}
+
 function normalizeCalendarEvents(items) {
   const now = new Date().toISOString();
   return (Array.isArray(items) ? items : []).map((item) => {
@@ -534,6 +643,9 @@ function normalizeCalendarEvents(items) {
       createdBy: String(item.createdBy || ""),
       createdByName: String(item.createdByName || ""),
       color: ["blue", "red", "green", "purple"].includes(item.color) ? item.color : "blue",
+      categoryId: String(item.categoryId || ""),
+      recurrence: ["weekly", "monthly", "yearly"].includes(item.recurrence) ? item.recurrence : "none",
+      recurrenceUntil: /^\d{4}-\d{2}-\d{2}$/.test(String(item.recurrenceUntil || "")) ? String(item.recurrenceUntil) : "",
       createdAt: item.createdAt || now,
       updatedAt: item.updatedAt || item.createdAt || now
     };
@@ -1015,7 +1127,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("permanence") || normalized.includes("dossier local")) return ["permanenceRequests", "teamTasks"];
   if (normalized.includes("dossier equipe")) return ["teamFolders", "teamTasks"];
   if (normalized.includes("tache")) return ["teamTasks"];
-  if (normalized.includes("calendrier") || normalized.includes("evenement agenda")) return ["calendarEvents"];
+  if (normalized.includes("calendrier") || normalized.includes("evenement agenda")) return ["calendarEvents", "calendarEventCategories"];
   if (normalized.includes("dossier document")) return ["documentFolders", "documents"];
   if (normalized.includes("document")) return ["documents"];
   if (normalized.includes("support")) return ["citizenRequests"];
@@ -3104,7 +3216,7 @@ function calendarEventCreator(item = {}) {
 
 function calendarEventsForDate(date) {
   const key = calendarDateKey(date);
-  return (adminState.calendarEvents || []).filter((item) => String(item.startAt || "").slice(0, 10) === key).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
+  return (adminState.calendarEvents || []).map((item) => calendarEventOnDate(item, key)).filter(Boolean).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt)));
 }
 
 function calendarTimeLabel(value) {
@@ -3126,8 +3238,9 @@ function renderCalendarTimedEvent(item) {
   const duration = Math.max(30, (end.getTime() - start.getTime()) / 60000);
   const top = Math.max(0, startMinutes - 7 * 60);
   const height = Math.max(30, Math.min(duration, 13 * 60 - top));
-  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""}" style="--event-top:${top}px;--event-height:${height}px" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">
+  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""} ${calendarCategory(item) ? "is-categorized" : ""}" style="--event-top:${top}px;--event-height:${height}px;${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">
     <strong>${text(item.title)}</strong>
+    ${item.recurrence && item.recurrence !== "none" ? `<small>↻ ${text(calendarRecurrenceLabel(item.recurrence))}</small>` : ""}
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
@@ -3164,7 +3277,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3180,6 +3293,9 @@ function calendarDraftEvent() {
     location: "",
     body: "",
     color: "blue",
+    categoryId: "",
+    recurrence: "none",
+    recurrenceUntil: "",
     createdBy: currentUserId,
     createdByName: userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe"
   };
@@ -3251,7 +3367,13 @@ function renderCalendarEditor(item) {
       <div class="calendar-editor-range"><label>Début <span>*</span><input name="startAt" type="datetime-local" value="${attr(item.startAt)}" required /></label><label>Fin <span>*</span><input name="endAt" type="datetime-local" value="${attr(item.endAt)}" required /></label></div>
       <label>Lieu<input name="location" value="${attr(item.location)}" maxlength="240" placeholder="Lieu ou adresse" /></label>
       <label>Description<textarea name="body" data-calendar-body rows="9" placeholder="Ajoutez ici les informations utiles…">${text(item.body)}</textarea></label>
-      <label>Couleur<select name="color"><option value="blue" ${item.color === "blue" ? "selected" : ""}>Bleu</option><option value="red" ${item.color === "red" ? "selected" : ""}>Rouge</option><option value="green" ${item.color === "green" ? "selected" : ""}>Vert</option><option value="purple" ${item.color === "purple" ? "selected" : ""}>Violet</option></select></label>
+      <label>Catégorie<select name="categoryId"><option value="">Sans catégorie</option>${(adminState.calendarEventCategories || []).map((category) => `<option value="${attr(category.id)}" ${item.categoryId === category.id ? "selected" : ""}>${text(category.name)}</option>`).join("")}</select></label>
+      <label>Répétition<select name="recurrence" data-calendar-recurrence>
+        ${[["none", "Ne pas répéter"], ["weekly", "Chaque semaine"], ["monthly", "Chaque mois"], ["yearly", "Chaque année"]].map(([id, name]) => `<option value="${id}" ${(item.recurrence || "none") === id ? "selected" : ""}>${name}</option>`).join("")}
+      </select></label>
+      <label class="calendar-recurrence-until" ${!item.recurrence || item.recurrence === "none" ? 'hidden' : ""}>Répéter jusqu'au (facultatif)<input type="date" name="recurrenceUntil" value="${attr(item.recurrenceUntil || "")}" /></label>
+      ${!isNew && item.recurrence && item.recurrence !== "none" ? '<p class="calendar-series-note">Les changements et la suppression concernent toute la série. Les répétitions sont calculées automatiquement à partir de la première date.</p>' : ""}
+      ${!item.categoryId ? `<label>Couleur (sans catégorie)<select name="color"><option value="blue" ${item.color === "blue" ? "selected" : ""}>Bleu</option><option value="red" ${item.color === "red" ? "selected" : ""}>Rouge</option><option value="green" ${item.color === "green" ? "selected" : ""}>Vert</option><option value="purple" ${item.color === "purple" ? "selected" : ""}>Violet</option></select></label>` : `<input type="hidden" name="color" value="${attr(item.color)}" />`}
 
       <label>Ajouté par<input value="${attr(calendarEventCreator(item))}" readonly /></label>
       <button class="primary-action" type="submit">${isNew ? "Ajouter l’événement" : "Enregistrer"}</button>
@@ -3268,9 +3390,12 @@ function renderCalendar() {
       <header class="calendar-toolbar">
         <div><h2>Calendrier</h2><p>Agenda partagé de l’équipe</p></div>
         <div class="calendar-toolbar-actions"><button class="secondary-action" type="button" data-calendar-today>Aujourd’hui</button><button class="calendar-arrow" type="button" data-calendar-move="prev" aria-label="Période précédente">‹</button><button class="calendar-arrow" type="button" data-calendar-move="next" aria-label="Période suivante">›</button><strong>${text(calendarRangeLabel(days))}</strong></div>
+        <button class="secondary-action calendar-manage-categories" type="button" data-calendar-categories-toggle>Catégories</button>
         <button class="primary-action calendar-new" type="button" data-calendar-new>${localIcon("plus")} Nouvel événement</button>
         <nav class="calendar-view-switch" aria-label="Vue du calendrier">${[["day", "Jour"], ["week", "Semaine"], ["month", "Mois"]].map(([value, label]) => `<button type="button" data-calendar-view="${value}" class="${calendarView === value ? "is-active" : ""}">${label}</button>`).join("")}</nav>
       </header>
+      ${adminFilters.calendarCategoriesOpen ? renderCalendarCategoriesManager() : ""}
+      ${(adminState.calendarEventCategories || []).length ? `<div class="calendar-category-legend" aria-label="Catégories">${(adminState.calendarEventCategories || []).map((category) => `<span><i style="background:${attr(category.color)}"></i>${text(category.name)}</span>`).join("")}</div>` : ""}
       ${calendarView === "month" ? renderCalendarMonth(days) : renderCalendarTimeGrid(days)}
     </main>
     ${selected ? renderCalendarEditor(selected) : ""}
@@ -3296,12 +3421,19 @@ function saveCalendarEvent(form) {
     location: String(data.get("location") || "").trim().slice(0, 240),
     body: String(data.get("body") || "").slice(0, 12000),
     color: data.get("color") || "blue",
+    categoryId: (adminState.calendarEventCategories || []).some((category) => category.id === data.get("categoryId")) ? String(data.get("categoryId")) : "",
+    recurrence: ["weekly", "monthly", "yearly"].includes(data.get("recurrence")) ? data.get("recurrence") : "none",
+    recurrenceUntil: ["weekly", "monthly", "yearly"].includes(data.get("recurrence")) ? String(data.get("recurrenceUntil") || "") : "",
     contactIds: [...new Set(data.getAll("contactIds").map(String).filter((id) => contactById(id)))],
     createdBy: previous?.createdBy || currentUserId,
     createdByName: previous?.createdByName || userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: previous?.createdAt || now,
     updatedAt: now
   };
+  if (item.recurrence !== "none" && item.recurrenceUntil && item.recurrenceUntil < startAt.slice(0, 10)) {
+    showToast("La date de fin de répétition doit être postérieure ou égale au début.");
+    return;
+  }
   adminState.calendarEvents = previous ? adminState.calendarEvents.map((entry) => entry.id === id ? item : entry) : [item, ...(adminState.calendarEvents || [])];
   selectedCalendarEventId = id;
   calendarCursor = startAt.slice(0, 10);
@@ -7556,6 +7688,17 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  if (event.target.closest("[data-calendar-categories-toggle]")) {
+    adminFilters.calendarCategoriesOpen = !adminFilters.calendarCategoriesOpen;
+    renderAdmin();
+    return;
+  }
+  if (event.target.closest("[data-calendar-categories-close]")) { adminFilters.calendarCategoriesOpen = false; renderAdmin(); return; }
+  const categoryEdit = event.target.closest("[data-calendar-category-edit]");
+  if (categoryEdit) { adminFilters.calendarCategoryEdit = categoryEdit.dataset.calendarCategoryEdit; renderAdmin(); return; }
+  const categoryDelete = event.target.closest("[data-calendar-category-delete]");
+  if (categoryDelete) { deleteCalendarCategory(categoryDelete.dataset.calendarCategoryDelete); return; }
+  if (event.target.closest("[data-calendar-category-new]")) { adminFilters.calendarCategoryEdit = ""; renderAdmin(); return; }
   const calendarViewButton = event.target.closest("[data-calendar-view]");
   if (calendarViewButton) {
     calendarView = calendarViewButton.dataset.calendarView || "week";
@@ -8163,6 +8306,8 @@ document.addEventListener("submit", async (event) => {
   if (photoFolderCreate) { event.preventDefault(); const name = String(new FormData(photoFolderCreate).get("name") || "").trim(); if (!name) return; ensureAdminPhotoLibrary(); const now = new Date().toISOString(); const folder = { id: crypto.randomUUID(), name: name.slice(0, 120), createdAt: now, updatedAt: now }; adminState.photoLibrary.folders.unshift(folder); selectedPhotoFolderId = folder.id; publishPhotoLibrary("creation dossier", folder.name); return; }
   const photoUpdate = form.closest("[data-photo-update]");
   if (photoUpdate) { event.preventDefault(); const photo = adminState.photoLibrary.photos.find((item) => item.id === photoUpdate.dataset.photoUpdate); if (!photo) return; const data = new FormData(photoUpdate); if (!photo.eventId || !state.agenda.some((item) => item.id === photo.eventId)) { photo.commune = String(data.get("commune") || "").trim().slice(0, 120); photo.takenAt = String(data.get("takenAt") || ""); } photo.alt = String(data.get("alt") || "").trim().slice(0, 300); publishPhotoLibrary("modification photo", photo.fileName); return; }
+  const categorySave = form.closest("[data-calendar-category-save]");
+  if (categorySave) { event.preventDefault(); saveCalendarCategory(categorySave); return; }
   const calendarSave = form.closest("[data-calendar-save]");
   if (calendarSave) { event.preventDefault(); saveCalendarEvent(calendarSave); return; }
   if (form.id === "hero-search-form") {
@@ -8321,6 +8466,12 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-calendar-recurrence]")) {
+    const label = event.target.closest("form")?.querySelector(".calendar-recurrence-until");
+    if (label) label.hidden = event.target.value === "none";
+    return;
+  }
+
   if (event.target.matches('[data-mail-campaign-form] select')) { mailCampaignUI.preview = null; mailCampaignUI.searchId = String(document.querySelector('[data-mail-campaign-form] select[name="searchId"]')?.value || ""); mailCampaignUI.templateId = String(document.querySelector('[data-mail-campaign-form] select[name="templateId"]')?.value || ""); mailCampaignUI.consentConfirmed = Boolean(document.querySelector('[data-mail-campaign-form] input[name="consentConfirmed"]')?.checked); renderAdmin(); return; }
   if (event.target.matches('[data-mail-campaign-form] input[name="consentConfirmed"]')) { mailCampaignUI.consentConfirmed = event.target.checked; return; }
   beginAdminMutationSnapshot();
