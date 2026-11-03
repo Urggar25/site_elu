@@ -280,23 +280,40 @@
     } finally { busy = false; if (isActive()) renderAdmin(); }
   }
 
-  function apply() {
+  async function apply() {
     if (busy || !source || !canModerate()) return;
     const plan = calculate();
     if (!plan || !plan.changed) return;
     const answer = confirm("Appliquer " + plan.updated.length + " modifications et créer " +
       plan.created.length + " fiches ? Cette action modifie votre base de contacts.");
     if (!answer) return;
-    busy = true;
+    // Keep the previous contacts array for a guaranteed rollback on an API failure.
+    const previousState = cloneAdminState();
     const replacements = new Map(plan.updated.map((person) => [person.id, person]));
-    adminState.localContacts = adminState.localContacts.map((person) => replacements.get(person.id) || person).concat(plan.created);
-    report = plan.addedMaires + " maire(s) tagués, " + plan.formerMaires +
+    const detail = plan.addedMaires + " maire(s) tagués, " + plan.formerMaires +
       " ancien(s) maire(s) détagués, " + plan.addedAdjoints +
       " adjoint(s) tagués, " + plan.created.length + " fiche(s) créées.";
-    source = null;
-    busy = false;
-    saveAdminState("import", "contacts adjoint", report);
-    showToast("Mise à jour des élus enregistrée. Vérifiez l'état de synchronisation.");
+    busy = true;
+    adminState.localContacts = adminState.localContacts.map((person) => replacements.get(person.id) || person).concat(plan.created);
+    try {
+      const saved = await saveAdminStateToDatabaseOnly("import", "contacts adjoint", detail, previousState);
+      if (saved) {
+        report = detail;
+        source = null;
+        message = "Mise à jour enregistrée en base de données.";
+        showToast("Import des élus enregistré.");
+      } else {
+        message = "Sauvegarde impossible. Les données précédentes ont été restaurées : vous pouvez réessayer.";
+      }
+    } catch (error) {
+      adminState = normalizeAdminState(previousState);
+      resetContactLookupCaches();
+      message = "Sauvegarde impossible : " + (error.message || "erreur inconnue");
+      console.error("Erreur sauvegarde des élus", error);
+    } finally {
+      busy = false;
+      if (isActive()) renderAdmin();
+    }
   }
 
   document.addEventListener("change", (event) => {
