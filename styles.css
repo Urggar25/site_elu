@@ -11456,3 +11456,25 @@ body.admin-mode .calendar-attendance-choice input { width: 17px; min-width: 17px
 .campaign-major-agenda-backlink { margin:.5rem 0; }
 @media(max-width:980px) { .campaign-major-columns { grid-template-columns:1fr; } .campaign-major-list { max-height:280px; } .campaign-major-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:650px) { .campaign-major-page { padding:.65rem; } .campaign-major-dates { grid-template-columns:1fr; } .campaign-major-participant { grid-template-columns:minmax(0,1fr) auto; } .campaign-major-participant > small { grid-column:1 / -1; } .campaign-major-participant label { grid-column:1 / -1; } .campaign-major-participant button.danger { grid-column:2; grid-row:1; } }
+
+/* Recherche sauvegardée : sélecteur discret au-dessus des contacts */
+body.admin-mode .contact-saved-popover-wrap { position: relative; display: inline-flex; align-self: flex-start; max-width: 100%; z-index: 60; }
+body.admin-mode .contact-saved-toggle { font-size: .82rem; }
+body.admin-mode .contact-saved-popover[hidden] { display: none !important; }
+body.admin-mode .contact-saved-popover {
+  position: absolute; top: calc(100% + 8px); left: 0;
+  z-index: 1000; width: min(860px, calc(100vw - 85px)); max-height: min(72vh, 740px);
+  overflow: auto; border: 1px solid #cbd7e7; border-radius: 14px;
+  background: #fff; box-shadow: 0 16px 46px rgba(18,27,41,.22);
+}
+body.admin-mode .contact-saved-popover .saved-contact-searches { margin: 0; border: 0; background: #fff; }
+body.admin-mode .contact-saved-popover .saved-contact-searches-list { max-height: min(48vh, 540px); }
+body.admin-mode .contact-search-page:not(:has(.contact-saved-popover)) .saved-contact-searches-list { max-height: 65vh; min-height: 340px; }
+body.admin-mode .calendar-pdf-export { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; }
+body.admin-mode .calendar-pdf-export label { display: grid; gap: 3px; font-size: .72rem; font-weight: 700; color: var(--admin-muted); }
+body.admin-mode .calendar-pdf-export input[type="date"] { min-height: 34px; padding: 5px 8px; border: 1px solid #cbd7e7; border-radius: 6px; background: #fff; color: var(--admin-ink); }
+body.admin-mode .calendar-pdf-export button { align-self: end; white-space: nowrap; }
+@media (max-width: 780px) {
+  body.admin-mode .contact-saved-popover { width: min(94vw, 650px); }
+  body.admin-mode .calendar-pdf-export { grid-column: 1 / -1; }
+}
