@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-campaign-major-events-v1";
+const ASSET_VERSION = "20261103-agenda-pdf-search-popover-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -29,9 +29,7 @@ const adminMenu = {
         ["death", "Gestion des deces", "mail"],
         ["special-letters", "Courriers speciaux", "doc"],
         ["permanence", "Dossiers locaux", "star"],
-        ["documents", "Nos documents", "file"],
-        ["mail-templates", "Modèles de mails", "mail"],
-        ["mail-campaigns", "Envoi de mails", "mail"]
+        ["documents", "Nos documents", "file"]
       ]
     },
     {
@@ -49,7 +47,9 @@ const adminMenu = {
       label: "Campagne",
       items: [
         ["campaign-terrain", "Terrain", "map"],
-        ["campaign-events", "Événements", "calendar"]
+        ["campaign-events", "Événements", "calendar"],
+        ["mail-templates", "Modèles de mails", "mail"],
+        ["mail-campaigns", "Envoi de mails", "mail"]
       ]
     },
     {
@@ -4008,6 +4008,110 @@ function renderCalendarEditor(item) {
   </aside>`;
 }
 
+
+function downloadCalendarAgendaPdf(startKey, endKey) {
+  const valid = /^\\d{4}-\\d{2}-\\d{2}$/;
+  if (!valid.test(startKey) || !valid.test(endKey) || calendarDateKey(startKey) !== startKey || calendarDateKey(endKey) !== endKey || startKey > endKey) {
+    showToast("Choisissez une période valide pour l'export PDF."); return;
+  }
+  const days = Math.round((calendarDate(endKey) - calendarDate(startKey)) / 86400000) + 1;
+  if (days > 366) { showToast("La période ne peut pas dépasser 366 jours."); return; }
+  const displayDate = (key) => new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(calendarDate(key));
+  const lines = [];
+  let eventCount = 0;
+  for (let index = 0; index < days; index++) {
+    const date = calendarAddDays(startKey, index);
+    const events = calendarEventsForDate(date);
+    if (!events.length) continue;
+    lines.push({ kind: "day", value: displayDate(calendarDateKey(date)) });
+    events.forEach((item) => {
+      eventCount++;
+      const hour = calendarTimeLabel(item.startAt);
+      const end = calendarTimeLabel(item.endAt);
+      const title = String(item.title || item.name || "Événement");
+      lines.push({ kind: "event", value: (hour ? hour + (end ? " - " + end : "") + "  |  " : "") + title });
+      const place = String(item.location || item.place || "").trim();
+      if (place) lines.push({ kind: "detail", value: "Lieu : " + place });
+      const description = String(item.description || "").replace(/\\s+/g, " ").trim();
+      if (description) lines.push({ kind: "detail", value: description.slice(0, 500) });
+    });
+  }
+  if (!eventCount) lines.push({ kind: "detail", value: "Aucun événement dans cette période." });
+  // Small self-contained PDF writer: direct download, no CDN or print dialog.
+  // WinAnsiEncoding supports French accents; characters outside Windows-1252 are replaced.
+  const cp1252 = { 8364:128, 8218:130, 402:131, 8222:132, 8230:133, 8224:134, 8225:135, 710:136, 8240:137, 352:138, 8249:139, 338:140, 381:142, 8216:145, 8217:146, 8220:147, 8221:148, 8226:149, 8211:150, 8212:151, 732:152, 8482:153, 353:154, 8250:155, 339:156, 382:158, 376:159 };
+  const encoded = (value) => {
+    let result = "";
+    for (const char of String(value)) {
+      const point = char.codePointAt(0);
+      const byte = point <= 255 ? point : cp1252[point];
+      result += byte === undefined || byte < 32 && byte !== 32 ? "?" : String.fromCharCode(byte);
+    }
+    return result.replace(/\\/g, "\\\\").replace(/\\(/g, "\\(").replace(/\\)/g, "\\)");
+  };
+  const wrap = (value, width) => {
+    const words = String(value).split(/\\s+/);
+    const out = [];
+    let line = "";
+    for (const word of words) {
+      if ((line + " " + word).trim().length > width && line) { out.push(line); line = ""; }
+      if (word.length > width) {
+        if (line) { out.push(line); line = ""; }
+        for (let n = 0; n < word.length; n += width) out.push(word.slice(n, n + width));
+      } else line = (line + " " + word).trim();
+    }
+    if (line) out.push(line);
+    return out;
+  };
+  const pageStreams = [];
+  let drawing = [], y = 745, pageNumber = 1;
+  const write = (value, size = 10, bold = false, indent = 0) => {
+    for (const line of wrap(value, size >= 13 ? 70 : 95)) {
+      const needed = size >= 13 ? 22 : 15;
+      if (y < 58) { finishPage(); }
+      drawing.push("BT /F" + (bold ? "2" : "1") + " " + size + " Tf 1 0 0 1 " + (42 + indent) + " " + y + " Tm (" + encoded(line) + ") Tj ET");
+      y -= needed;
+    }
+  };
+  const finishPage = () => {
+    drawing.push("BT /F1 9 Tf 1 0 0 1 42 34 Tm (" + encoded("Agenda - Page " + pageNumber) + ") Tj ET");
+    pageStreams.push(drawing.join("\\n")); drawing = []; y = 745; pageNumber++;
+  };
+  write("Agenda partagé", 19, true);
+  write("Du " + displayDate(startKey) + " au " + displayDate(endKey), 11);
+  write(eventCount + " événement(s) - " + days + " jour(s)", 10);
+  y -= 12;
+  for (const line of lines) {
+    if (line.kind === "day") { y -= 9; write(line.value, 13, true); }
+    else if (line.kind === "event") write(line.value, 10, true, 8);
+    else write(line.value, 9, false, 17);
+  }
+  finishPage();
+  const objects = [null, "<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"];
+  const pageIds = [];
+  for (const content of pageStreams) {
+    const pageId = objects.length;
+    const streamId = pageId + 1;
+    pageIds.push(pageId + " 0 R");
+    objects.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents " + streamId + " 0 R >>");
+    objects.push("<< /Length " + content.length + " >>\\nstream\\n" + content + "\\nendstream");
+  }
+  objects[2] = "<< /Type /Pages /Kids [" + pageIds.join(" ") + "] /Count " + pageIds.length + " >>";
+  let pdf = "%PDF-1.4\\n%âãÏÓ\\n", offsets = [0];
+  objects.forEach((object, index) => {
+    if (!index) return;
+    offsets[index] = pdf.length;
+    pdf += index + " 0 obj\\n" + object + "\\nendobj\\n";
+  });
+  const xrefOffset = pdf.length;
+  pdf += "xref\\n0 " + objects.length + "\\n0000000000 65535 f \\n";
+  for (let i = 1; i < objects.length; i++) pdf += String(offsets[i]).padStart(10, "0") + " 00000 n \\n";
+  pdf += "trailer\\n<< /Size " + objects.length + " /Root 1 0 R >>\\nstartxref\\n" + xrefOffset + "\\n%%EOF";
+  const bytes = Uint8Array.from(pdf, (char) => char.charCodeAt(0));
+  downloadFile("agenda-" + startKey + "-au-" + endKey + ".pdf", bytes, "application/pdf");
+  showToast(eventCount + " événement(s) exporté(s) en PDF.");
+}
+
 function renderCalendar() {
   const days = calendarVisibleDays();
   const selected = selectedCalendarEventId === "__new" ? calendarDraftEvent() : (adminState.calendarEvents || []).find((item) => item.id === selectedCalendarEventId);
@@ -4018,6 +4122,11 @@ function renderCalendar() {
         <p class="calendar-copy-hint">Ctrl + glisser un événement vers un autre créneau pour le dupliquer (ou utilisez le bouton Dupliquer).</p>
         <div class="calendar-toolbar-actions"><button class="secondary-action" type="button" data-calendar-today>Aujourd’hui</button><button class="calendar-arrow" type="button" data-calendar-move="prev" aria-label="Période précédente">‹</button><button class="calendar-arrow" type="button" data-calendar-move="next" aria-label="Période suivante">›</button><strong>${text(calendarRangeLabel(days))}</strong></div>
         <button class="secondary-action calendar-manage-categories" type="button" data-calendar-categories-toggle>Catégories</button>
+        <form class="calendar-pdf-export" data-calendar-pdf-form aria-label="Exporter l’agenda PDF">
+          <label>Du <input name="from" type="date" required value="${calendarDateKey(days[0])}" /></label>
+          <label>Au <input name="to" type="date" required value="${calendarDateKey(days[days.length - 1])}" /></label>
+          <button type="submit" class="secondary-action compact">Télécharger PDF</button>
+        </form>
         <button class="primary-action calendar-new" type="button" data-calendar-new>${localIcon("plus")} Nouvel événement</button>
         <nav class="calendar-view-switch" aria-label="Vue du calendrier">${[["day", "Jour"], ["week", "Semaine"], ["month", "Mois"]].map(([value, label]) => `<button type="button" data-calendar-view="${value}" class="${calendarView === value ? "is-active" : ""}">${label}</button>`).join("")}</nav>
       </header>
@@ -4345,7 +4454,10 @@ function renderContacts() {
         ${renderContactDynamicFilters(filters)}
         ${renderContactPagination({ ...filters, page }, contacts.length)}
       </form>
-      ${renderSavedContactSearches()}
+      <div class="contact-saved-popover-wrap">
+        <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
+        <div id="contact-saved-popover" class="contact-saved-popover" hidden>${renderSavedContactSearches()}</div>
+      </div>
     </section>
     <div class="admin-split contact-split">
       <section class="admin-list contact-result-list">
@@ -8060,6 +8172,17 @@ async function updateUserRole(userId, role) {
 
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
+  const savedToggle = event.target.closest("[data-contact-saved-toggle]");
+  if (savedToggle) {
+    const menu = document.querySelector("#contact-saved-popover");
+    if (menu) { menu.hidden = !menu.hidden; savedToggle.setAttribute("aria-expanded", String(!menu.hidden)); }
+    return;
+  }
+  const savedPopover = document.querySelector("#contact-saved-popover");
+  if (savedPopover && !savedPopover.hidden && !event.target.closest("#contact-saved-popover")) {
+    savedPopover.hidden = true;
+    document.querySelector("[data-contact-saved-toggle]")?.setAttribute("aria-expanded", "false");
+  }
   const contactPickerSelect = event.target.closest("[data-contact-picker-select]");
   if (contactPickerSelect) {
     const key = contactPickerSelect.dataset.contactPickerSelect;
@@ -8989,6 +9112,14 @@ document.addEventListener("click", async (event) => {
     deleteContactField(deleteContactFieldButton.dataset.deleteContactField);
   }
 });
+
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-calendar-pdf-form]");
+  if (!form) return;
+  event.preventDefault();
+  const data = new FormData(form);
+  downloadCalendarAgendaPdf(String(data.get("from") || ""), String(data.get("to") || ""));
+}, true);
 
 document.addEventListener("submit", async (event) => {
   beginAdminMutationSnapshot();
