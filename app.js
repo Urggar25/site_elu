@@ -6427,6 +6427,11 @@ function createContact(form) {
 
 function updateContactReferences(previousId, nextId) {
   if (!previousId || !nextId || previousId === nextId) return;
+  (adminState.institutions || []).forEach((item) => {
+    if (item.mayorContactId === previousId) item.mayorContactId = nextId;
+    if (item.legacyContactId === previousId) item.legacyContactId = nextId;
+    item.deputyContactIds = (item.deputyContactIds || []).map(id => id === previousId ? nextId : id);
+  });
   adminState.permanenceRequests.forEach((item) => { if (item.contactId === previousId) item.contactId = nextId; });
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); for (const rows of Object.values(item.attendanceByDate || {})) rows.forEach((row) => { if (row.contactId === previousId) row.contactId = nextId; }); });
@@ -6439,6 +6444,11 @@ function updateContactReferences(previousId, nextId) {
 
 function clearDeletedContactReferences(ids) {
   const deleted = new Set(ids);
+  (adminState.institutions || []).forEach((item) => {
+    if (deleted.has(item.mayorContactId)) item.mayorContactId = "";
+    if (deleted.has(item.legacyContactId)) item.legacyContactId = "";
+    item.deputyContactIds = (item.deputyContactIds || []).filter(id => !deleted.has(id));
+  });
   adminState.permanenceRequests.forEach((item) => { if (deleted.has(item.contactId)) item.contactId = ""; });
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); for (const [day, rows] of Object.entries(item.attendanceByDate || {})) item.attendanceByDate[day] = rows.filter((row) => !deleted.has(row.contactId)); });
@@ -6521,7 +6531,7 @@ async function deleteSelectedContactsFast(selectedCount = null) {
 
 function contactExportRows() {
   const headers = contactFields().map((field) => field.id);
-  return { headers, rows: adminState.localContacts.map((contact) => headers.map((field) => Array.isArray(contact[field]) ? contact[field].join(", ") : contact[field] || "")) };
+  return { headers, rows: adminState.localContacts.filter((contact) => contact.entityType !== "institution").map((contact) => headers.map((field) => Array.isArray(contact[field]) ? contact[field].join(", ") : contact[field] || "")) };
 }
 
 function csvEscape(value = "") {
