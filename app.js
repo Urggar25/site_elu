@@ -680,9 +680,10 @@ function renderCalendarAttendance(item) {
       return `<div class="calendar-attendance-row">
         <button type="button" data-calendar-open-contact="${attr(row.contactId)}" class="calendar-attendance-contact">${text(contact ? contactDisplayName(contact) : "Contact indisponible")}</button>
         ${contact?.city ? `<small>${text(contact.city)}</small>` : ""}
-        <label>Présence<select data-attendance-status="${attr(row.contactId)}">
-          ${[["registered", "À confirmer"], ["attended", "Est venu"], ["absent", "N'est pas venu"]].map(([value, name]) => `<option value="${value}" ${row.status === value ? "selected" : ""}>${name}</option>`).join("")}
-        </select></label>
+        <div class="calendar-attendance-choice" role="group" aria-label="Présence de ${attr(contact ? contactDisplayName(contact) : "ce participant")}">
+          <label><input type="checkbox" data-attendance-check="${attr(row.contactId)}" value="attended" ${row.status === "attended" ? "checked" : ""} /> Est venu</label>
+          <label><input type="checkbox" data-attendance-check="${attr(row.contactId)}" value="absent" ${row.status === "absent" ? "checked" : ""} /> N'est pas venu</label>
+        </div>
         <button type="button" class="secondary-action compact danger" data-attendance-remove="${attr(row.contactId)}">Retirer</button>
       </div>`;
     }).join("") || '<p class="calendar-attendance-empty">Aucun participant enregistré.</p>'}</div>
@@ -8819,9 +8820,10 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
-  if (event.target.matches("[data-attendance-status]")) {
+  if (event.target.matches("[data-attendance-check]")) {
     const panel = event.target.closest("[data-calendar-attendance]");
-    if (panel) calendarAttendanceAction(panel.dataset.calendarAttendance, panel.dataset.attendanceDay, event.target.dataset.attendanceStatus, event.target.value);
+    const status = event.target.checked ? event.target.value : "registered";
+    if (panel) calendarAttendanceAction(panel.dataset.calendarAttendance, panel.dataset.attendanceDay, event.target.dataset.attendanceCheck, status);
     return;
   }
   if (event.target.matches("[data-calendar-recurrence]")) {
