@@ -11392,3 +11392,7 @@ body.admin-mode .calendar-attendance-empty { font-size: .8rem; color: #64748b; }
 body.admin-mode .calendar-attendance-panel > small { color: #536781; font-size: .72rem; line-height: 1.35; }
 body.admin-mode .calendar-event > small:last-child { font-size: .65rem; }
 @media (max-width: 550px) { body.admin-mode .calendar-attendance-row { grid-template-columns: minmax(0,1fr); } body.admin-mode .calendar-attendance-row > button.danger { grid-row: auto; grid-column: 1; justify-self: start; } }
+
+body.admin-mode .calendar-attendance-choice { grid-column: 1; display: flex; flex-wrap: wrap; gap: .4rem .7rem; }
+body.admin-mode .calendar-attendance-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .4rem; border: 1px solid #dae5f2; border-radius: 6px; background: #f7f9fc; font-size: .73rem; cursor: pointer; }
+body.admin-mode .calendar-attendance-choice input { width: 17px; min-width: 17px; height: 17px; min-height: 17px; margin: 0; }
