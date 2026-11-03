@@ -121,6 +121,7 @@ function default_admin_state_seed(): array
         'permanenceKeywords' => [['id' => 'commune', 'label' => 'commune', 'color' => '#2d6fb6']],
         'teamTasks' => [],
         'calendarEvents' => [],
+        'calendarEventCategories' => [],
         'teamFolders' => [
             ['id' => 'team-folder-general', 'name' => 'Suivi general', 'description' => "Dossiers et actions suivis par l'equipe.", 'createdAt' => $now, 'updatedAt' => $now],
         ],
