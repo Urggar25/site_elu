@@ -50,6 +50,10 @@ function mailer_text($value): string {
     $clean = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
     return strtolower($clean !== false ? $clean : $value);
 }
+function mailer_keyword_id($value): string {
+    $id = preg_replace('/[^a-z0-9]+/', '-', mailer_text($value));
+    return trim((string)$id, '-');
+}
 function mailer_match(array $contact, array $filters, array $fields): bool {
     $q = trim((string)($filters['q'] ?? ''));
     if ($q !== '') {
@@ -57,6 +61,28 @@ function mailer_match(array $contact, array $filters, array $fields): bool {
             return is_scalar($v) ? (string) $v : (is_array($v) ? implode(' ', array_filter($v, 'is_scalar')) : '');
         }, array_values($contact))));
         if (!str_contains($haystack, mailer_text($q))) return false;
+    }
+    // Utiliser les mêmes critères ET / OU pour les listes sauvegardées et l'envoi de mails.
+    $wanted = [];
+    $rawWords = $filters['keywordIds'] ?? [];
+    if (is_array($rawWords)) {
+        foreach (array_slice($rawWords, 0, 100) as $word) {
+            if (!is_scalar($word)) continue;
+            $key = mailer_keyword_id((string)$word);
+            if ($key !== '') $wanted[$key] = true;
+        }
+    }
+    if ($wanted) {
+        $source = $contact['keywords'] ?? [];
+        $actual = is_array($source) ? $source : preg_split('/[,;]/', (string)$source);
+        $available = [];
+        foreach ($actual as $word) {
+            if (!is_scalar($word)) continue;
+            $key = mailer_keyword_id((string)$word);
+            if ($key !== '') $available[$key] = true;
+        }
+        $matchCount = count(array_intersect_key($wanted, $available));
+        if (($filters['keywordMode'] ?? 'OR') === 'AND' ? $matchCount !== count($wanted) : $matchCount === 0) return false;
     }
     foreach ($filters as $key => $raw) {
         if (!str_starts_with((string)$key, 'field_')) continue;

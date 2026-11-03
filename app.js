@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-participants-v1";
+const ASSET_VERSION = "20261103-contact-keywords-and-or-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -3105,6 +3105,51 @@ function contactFilterKey(field) {
   return `field_${field.id}`;
 }
 
+
+function normalizedContactKeywordIds(values) {
+  const items = Array.isArray(values) ? values : typeof values === "string" ? values.split(",") : [];
+  return [...new Set(items.map((value) => slugify(value)).filter((value) => value !== "item"))].slice(0, 100);
+}
+function contactKeywordChoices() {
+  const choices = new Map();
+  normalizeKeywords(adminState.contactKeywords || []).forEach((word) => choices.set(slugify(word.id), { id: slugify(word.id), label: word.label, color: word.color }));
+  (adminState.localContacts || []).forEach((contact) => {
+    const values = Array.isArray(contact.keywords) ? contact.keywords : String(contact.keywords || "").split(/[,;]/);
+    values.forEach((raw) => {
+      const label = String(raw || "").trim();
+      const id = slugify(label);
+      if (label && id !== "item" && !choices.has(id)) choices.set(id, { id, label, color: "#708199" });
+    });
+  });
+  return [...choices.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
+function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR") {
+  const wanted = normalizedContactKeywordIds(keywordIds);
+  if (!wanted.length) return true;
+  const values = Array.isArray(contact.keywords) ? contact.keywords : String(contact.keywords || "").split(/[,;]/);
+  const actual = new Set(values.map((value) => slugify(value)));
+  return keywordMode === "AND" ? wanted.every((id) => actual.has(id)) : wanted.some((id) => actual.has(id));
+}
+function renderContactKeywordFilters(filters) {
+  const selected = new Set(normalizedContactKeywordIds(filters.keywordIds));
+  const options = contactKeywordChoices();
+  return `<fieldset class="contact-keyword-search">
+    <legend>Mots-clés — recherche combinée</legend>
+    <div class="contact-keyword-mode">
+      <label><input type="radio" name="keywordMode" value="OR" ${filters.keywordMode !== "AND" ? "checked" : ""}/> <strong>OU</strong> <small>Au moins un mot-clé</small></label>
+      <label><input type="radio" name="keywordMode" value="AND" ${filters.keywordMode === "AND" ? "checked" : ""}/> <strong>ET</strong> <small>Tous les mots-clés</small></label>
+    </div>
+    <div class="contact-keyword-options">
+      ${options.map((word) => `<label class="contact-keyword-option">
+        <input type="checkbox" name="keywordIds" value="${attr(word.id)}" ${selected.has(word.id) ? "checked" : ""}/>
+        <span class="contact-keyword-swatch" style="background:${attr(word.color)}"></span>
+        <span>${text(word.label)}</span>
+      </label>`).join("") || '<small>Aucun mot-clé : ajoutez-en dans « Mots clés » ou sur une fiche contact.</small>'}
+    </div>
+    <small>${selected.size ? `${selected.size} mot(s)-clé(s) sélectionné(s)` : "Sélectionnez plusieurs mots-clés puis choisissez ET ou OU."}</small>
+  </fieldset>`;
+}
+
 function contactSearchFilters() {
   const filters = adminFilters.contacts || {};
   const perPage = [10, 25, 100, 1000].includes(Number(filters.perPage)) ? Number(filters.perPage) : 100;
@@ -3114,7 +3159,7 @@ function contactSearchFilters() {
     const value = String(filters[contactFilterKey(field)] || "").trim();
     if (value) fields[field.id] = value;
   });
-  return { q: String(filters.q || ""), page, perPage, fields };
+  return { q: String(filters.q || ""), page, perPage, fields, keywordIds: normalizedContactKeywordIds(filters.keywordIds), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" };
 }
 
 
@@ -3128,7 +3173,7 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (key === "q" || key === "perPage" || (key.startsWith("field_") && key.length < 100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])),
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (key === "q" || key === "perPage" || (key.startsWith("field_") && key.length < 100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || "")
@@ -3144,12 +3189,14 @@ function savedContactSearchFilters(form) {
   }
   if (String(values.q || "").trim()) filters.q = String(values.q).trim();
   filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
+  filters.keywordIds = normalizedContactKeywordIds(new FormData(form).getAll("keywordIds"));
+  filters.keywordMode = values.keywordMode === "AND" ? "AND" : "OR";
   return filters;
 }
 
 function savedContactSearchLabel(item) {
   const filters = item.filters || {};
-  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length;
+  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
 }
 
@@ -3163,7 +3210,7 @@ function renderSavedContactSearches() {
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
       <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Recharger la recherche">
-        <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${filteredContacts({ q: item.filters.q || "", fields: Object.fromEntries(Object.entries(item.filters).filter(([k]) => k.startsWith("field_")).map(([k,v]) => [k.slice(6),v])) }).length} contact(s) actuellement</small>
+        <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${filteredContacts({ q: item.filters.q || "", fields: Object.fromEntries(Object.entries(item.filters).filter(([k]) => k.startsWith("field_")).map(([k,v]) => [k.slice(6),v])), keywordIds: item.filters.keywordIds, keywordMode: item.filters.keywordMode }).length} contact(s) actuellement</small>
       </button>
       <button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés par ceux du formulaire">Actualiser</button>
       <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}" title="Supprimer cette recherche">Supprimer</button>
@@ -3214,7 +3261,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ q: filters.q || "", fields: filters.fields || {} });
+  return JSON.stringify({ q: filters.q || "", fields: filters.fields || {}, keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -3246,6 +3293,7 @@ function contactMatchesDynamicFilter(contact = {}, field, rawValue = "") {
 function contactMatchesFilters(contact, filters, fieldsById) {
   const normalizedQuery = filters.q ? normalizeName(filters.q) : "";
   if (normalizedQuery && !contactSearchText(contact).includes(normalizedQuery)) return false;
+  if (!contactMatchesKeywords(contact, filters.keywordIds, filters.keywordMode)) return false;
   return Object.entries(filters.fields || {}).every(([fieldId, value]) => {
     const field = fieldsById.get(fieldId);
     return !field || contactMatchesDynamicFilter(contact, field, value);
@@ -3282,10 +3330,12 @@ function renderContactDynamicFilter(field, value = "") {
 
 function renderContactDynamicFilters(filters) {
   const primaryFields = new Set(["firstName", "lastName", "city"]);
-  const fields = contactFields().filter((field) => field.id !== "id" && !primaryFields.has(field.id));
-  const activeCount = Object.keys(filters.fields || {}).filter((id) => !primaryFields.has(id)).length;
+  // Conserver la saisie historique si une recherche enregistrée utilisait field_keywords.
+  const fields = contactFields().filter((field) => field.id !== "id" && (field.id !== "keywords" || Boolean(filters.fields?.keywords)) && !primaryFields.has(field.id));
+  const activeCount = Object.keys(filters.fields || {}).filter((id) => !primaryFields.has(id)).length + normalizedContactKeywordIds(filters.keywordIds).length;
   return `<details class="contact-filter-section contact-dynamic-search" ${activeCount ? "open" : ""}>
     <summary><span>Plus de critères</span><small>${activeCount ? `${activeCount} actif${activeCount > 1 ? "s" : ""}` : "Téléphone, email, catégorie, organisation…"}</small></summary>
+    ${renderContactKeywordFilters(filters)}
     <div class="contact-filter-grid">${fields.map((field) => renderContactDynamicFilter(field, filters.fields[field.id] || "")).join("")}</div>
     <div class="contact-filter-actions">
       <button class="primary-action compact" type="submit">Appliquer les filtres</button>
@@ -8609,8 +8659,9 @@ document.addEventListener("submit", async (event) => {
   if (filter) {
     event.preventDefault();
     const key = filter.dataset.adminFilter;
-    adminFilters[key] = Object.fromEntries(new FormData(filter, event.submitter).entries());
-    if (key === "contacts") { adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
+    const values = new FormData(filter, event.submitter);
+    adminFilters[key] = Object.fromEntries(values.entries());
+    if (key === "contacts") { adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }
