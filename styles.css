@@ -11478,3 +11478,16 @@ body.admin-mode .calendar-pdf-export button { align-self: end; white-space: nowr
   body.admin-mode .contact-saved-popover { width: min(94vw, 650px); }
   body.admin-mode .calendar-pdf-export { grid-column: 1 / -1; }
 }
+
+/* Contacts: make expensive saved-search list progressive without shrinking viewport. */
+body.admin-mode .saved-contact-searches .saved-search-more {
+  display: block;
+  margin: .8rem auto;
+  min-height: 36px;
+}
+body.admin-mode .saved-contact-search-item small[data-saved-search-stats] {
+  overflow-wrap: anywhere;
+}
+body.admin-mode .contact-saved-popover .saved-contact-searches-list {
+  max-height: min(55vh, 600px);
+}
