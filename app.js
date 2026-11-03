@@ -23,6 +23,7 @@ const adminMenu = {
       label: "Permanence",
       items: [
         ["contacts", "Contacts", "search"],
+        ["saved-contact-searches", "Recherche sauvegardée", "search"],
         ["trombinoscope", "Trombinoscope", "users"],
         ["calendar", "Calendrier", "calendar"],
         ["death", "Gestion des deces", "mail"],
@@ -474,7 +475,7 @@ function allAdminMenuItems() {
 function normalizeMobileAdminMenu(value) {
   const allowed = new Set(allAdminMenuItems().map(([id]) => id));
   const fallback = defaultAdminState().mobileAdminMenu;
-  const essentialItems = ["dashboard", "permanence", "death", "special-letters", "documents", "campaign-events"];
+  const essentialItems = ["dashboard", "saved-contact-searches", "permanence", "death", "special-letters", "documents", "campaign-events"];
   return [...new Set([...essentialItems, ...(Array.isArray(value) ? value : fallback).map(String)].filter((id) => allowed.has(id)))];
 }
 
@@ -2475,6 +2476,7 @@ function renderAdminView() {
   if (activeAdminSection === "mail-templates") return renderMailTemplates();
   if (activeAdminSection === "mail-campaigns") return renderMailCampaigns();
   if (activeAdminSection === "contacts") return renderContacts();
+  if (activeAdminSection === "saved-contact-searches") return renderSavedContactSearchesPage();
   if (activeAdminSection === "calendar") return renderCalendar();
   if (activeAdminSection === "contact-io") return renderContactImportExport();
   if (activeAdminSection === "contact-fields") return renderContactFieldsAdmin();
@@ -3503,13 +3505,13 @@ function mergeSavedContactSearches() {
   showToast("Recherche fusionnée enregistrée.");
 }
 
-function renderSavedContactSearches() {
+function renderSavedContactSearches({ standalone = false } = {}) {
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
       <div><h3>Recherche sauvegardée</h3><p>Regroupez plusieurs listes (OU), exportez un fichier Excel avec une ligne par adresse, sans modifier les contacts d'origine.</p></div>
-      <button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>
+      ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       const contacts = savedSearchContacts(item, searches);
@@ -3527,6 +3529,10 @@ function renderSavedContactSearches() {
       </div>`;
     }).join("")}</div><button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
+}
+
+function renderSavedContactSearchesPage() {
+  return `<div class="contacts-admin contact-search-page"><header class="contact-search-head"><div><h2>Recherche sauvegardée</h2><p>Fusionnez vos listes et exportez les adresses sans doublons.</p></div></header>${renderSavedContactSearches({ standalone: true })}</div>`;
 }
 
 function saveContactSearch(form, existingId = "") {
@@ -3560,6 +3566,7 @@ function loadContactSearch(id) {
   clearContactSelection();
   adminFilters.contacts = item.sourceIds?.length ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
   adminFilters.activeSavedContactSearchId = item.id;
+  activeAdminSection = "contacts";
   renderAdmin();
 }
 
@@ -8740,6 +8747,7 @@ document.addEventListener("click", async (event) => {
   if (contactUpdateSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
     if (form) saveContactSearch(form, contactUpdateSearch.dataset.contactUpdateSearch);
+    else { loadContactSearch(contactUpdateSearch.dataset.contactUpdateSearch); showToast("Modifiez les filtres puis cliquez sur Actualiser dans Contacts."); }
     return;
   }
   const contactDeleteSearch = event.target.closest("[data-contact-delete-search]");
