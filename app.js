@@ -474,7 +474,7 @@ function allAdminMenuItems() {
 function normalizeMobileAdminMenu(value) {
   const allowed = new Set(allAdminMenuItems().map(([id]) => id));
   const fallback = defaultAdminState().mobileAdminMenu;
-  const essentialItems = ["dashboard", "permanence", "death", "special-letters", "documents"];
+  const essentialItems = ["dashboard", "permanence", "death", "special-letters", "documents", "campaign-events"];
   return [...new Set([...essentialItems, ...(Array.isArray(value) ? value : fallback).map(String)].filter((id) => allowed.has(id)))];
 }
 
@@ -3680,7 +3680,7 @@ function calendarCopyEvent(sourceId, occurrenceKey, target) {
   const copy = {
     ...source, id: crypto.randomUUID(), startAt: toLocalDateTimeValue(next),
     endAt: toLocalDateTimeValue(new Date(next.getTime() + duration)),
-    recurrence: "none", recurrenceUntil: "", attendanceByDate: {}, createdBy: currentUserId,
+    recurrence: "none", recurrenceUntil: "", attendanceByDate: {}, campaignEventId: "", createdBy: currentUserId,
     createdByName: userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: now, updatedAt: now
   };
@@ -4342,7 +4342,8 @@ function renderContactForm(contact) {
   const localCases = adminState.permanenceRequests.filter((item) => item.contactId === contact.id);
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
   const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  const campaignLinks = (adminState.campaignEvents || []).filter((item) => item.participants?.some((participant) => participant.contactId === contact.id)).map((item) => `<button type="button" data-open-contact-campaign-event="${attr(item.id)}">🎟 ${text(formatDate(item.startAt))} — ${text(item.title)}</button>`).join("");
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
@@ -8196,6 +8197,8 @@ document.addEventListener("click", async (event) => {
   if (campaignMajorUnlink) { unlinkCampaignMajorCalendar(campaignMajorUnlink.dataset.campaignMajorUnlinkCalendar); return; }
   const campaignMajorDelete = event.target.closest("[data-campaign-major-delete]");
   if (campaignMajorDelete) { deleteCampaignMajorEvent(campaignMajorDelete.dataset.campaignMajorDelete); return; }
+  const campaignFromContact = event.target.closest("[data-open-contact-campaign-event]");
+  if (campaignFromContact) { selectedCampaignMajorEventId = campaignFromContact.dataset.openContactCampaignEvent; activeAdminSection = "campaign-events"; renderAdmin(); return; }
   const campaignMajorBack = event.target.closest("[data-campaign-major-back]");
   if (campaignMajorBack) { selectedCampaignMajorEventId = campaignMajorBack.dataset.campaignMajorBack; activeAdminSection = "campaign-events"; renderAdmin(); return; }
   const campaignMajorOpenCalendar = event.target.closest("[data-campaign-major-open-calendar]");
