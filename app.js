@@ -3188,16 +3188,16 @@ function calendarContactChannels(contact = {}) {
   ];
   const seenPhones = new Set();
   const phones = contacts.filter(([, value]) => {
-    const digits = value.replace(/\\D/g, "");
+    const digits = value.replace(/\D/g, "");
     if (digits.length < 6 || seenPhones.has(digits)) return false;
     seenPhones.add(digits);
     return true;
   }).map(([label, value]) => {
-    const number = value.replace(/[^\\d+]/g, "");
+    const number = value.replace(/[^\d+]/g, "");
     return `<a class="calendar-contact-channel" href="tel:${attr(number)}" title="Appeler ${attr(contactDisplayName(contact))}">${text(label)} : ${text(value)}</a>`;
   });
   const email = String(contact.email || "").trim();
-  if (/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     phones.push(`<a class="calendar-contact-channel" href="mailto:${attr(email)}" title="Écrire à ${attr(contactDisplayName(contact))}">${text(email)}</a>`);
   }
   return phones.join("");
