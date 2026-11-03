@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-assign-copy-v1";
+const ASSET_VERSION = "20261103-calendar-drag-hex-delete-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -531,9 +531,15 @@ function normalizeCalendarEventCategories(value) {
 function calendarCategory(item = {}) {
   return (adminState.calendarEventCategories || []).find((category) => category.id === item.categoryId) || null;
 }
+function calendarCategoryTextColor(hex) {
+  const rgb = [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const luminance = rgb.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  return luminance > 0.179 ? "#172b44" : "#ffffff";
+}
 function calendarCategoryStyle(item = {}) {
   const category = calendarCategory(item);
-  return category ? `--calendar-category-color:${attr(category.color)};` : "";
+  return category ? `--calendar-category-color:${attr(category.color)};--calendar-category-text:${calendarCategoryTextColor(category.color)};` : "";
 }
 function calendarRecurrenceLabel(recurrence) {
   return { weekly: "Chaque semaine", monthly: "Chaque mois", yearly: "Chaque année" }[recurrence] || "Une fois";
@@ -589,8 +595,8 @@ function calendarEventOnDate(item, key) {
 function saveCalendarCategory(form) {
   const values = new FormData(form);
   const name = String(values.get("name") || "").trim().slice(0, 80);
-  const color = String(values.get("color") || "");
-  if (!name || !/^#[0-9a-fA-F]{6}$/.test(color)) { showToast("Saisissez un nom et une couleur valide."); return; }
+  const color = String(values.get("colorHex") || "").trim().toUpperCase();
+  if (!name || !/^#[0-9A-F]{6}$/.test(color)) { showToast("Indiquez une couleur au format #RRGGBB (6 chiffres hexadécimaux)."); return; }
   const items = normalizeCalendarEventCategories(adminState.calendarEventCategories);
   const editing = items.find((item) => item.id === form.dataset.calendarCategorySave);
   const id = editing?.id || crypto.randomUUID();
@@ -619,7 +625,9 @@ function renderCalendarCategoriesManager() {
     </div>`).join("") || "<p>Aucune catégorie pour le moment.</p>"}</div>
     <form data-calendar-category-save="${attr(editing?.id || "new")}" class="calendar-category-form">
       <label>Nom de la catégorie <input name="name" required maxlength="80" value="${attr(editing?.name || "")}" placeholder="Ex. Permanences, réunions, visites..." /></label>
-      <label>Couleur <input name="color" type="color" value="${attr(editing?.color || "#3478c0")}" /></label>
+      <label>Couleur <input name="color" type="color" data-calendar-color-picker value="${attr(editing?.color || "#3478c0")}" /></label>
+      <label>Code hexadécimal <input name="colorHex" data-calendar-color-hex type="text" spellcheck="false" required maxlength="7" pattern="#[0-9a-fA-F]{6}" value="${attr(editing?.color || "#3478c0")}" placeholder="#3478C0" aria-describedby="calendar-hex-help" /></label>
+      <small id="calendar-hex-help">Choisis librement une couleur #RRGGBB, ou utilise le sélecteur.</small>
       <button type="submit" class="primary-action compact">${editing ? "Enregistrer" : "Ajouter la catégorie"}</button>
       ${editing ? '<button type="button" data-calendar-category-new class="secondary-action compact">Annuler</button>' : ""}
     </form>
@@ -3283,13 +3291,16 @@ function calendarCopyEvent(sourceId, occurrenceKey, target) {
   showToast("Événement dupliqué (copie indépendante de la récurrence).");
   return true;
 }
-function calendarPointDropDate(clientX, clientY) {
+function calendarPointDropDate(clientX, clientY, grabOffset = 0) {
   const column = document.elementFromPoint(clientX, clientY)?.closest(".calendar-day-column[data-calendar-date]");
   if (!column || !column.closest(".calendar-grid-shell")) return "";
   const rect = column.getBoundingClientRect();
   const offset = clientY - rect.top;
   if (offset < 0 || offset >= rect.height) return "";
-  const minute = Math.max(7 * 60, Math.min(19 * 60 + 45, 7 * 60 + Math.round(offset / 15) * 15));
+  // Pointer position refers to where the event was grabbed, not its top-left corner.
+  // Preserve that grab offset, otherwise each copy is shifted by e.g. 15 minutes.
+  const eventTop = offset - Math.max(0, grabOffset);
+  const minute = Math.max(7 * 60, Math.min(19 * 60 + 45, 7 * 60 + Math.round(eventTop / 15) * 15));
   return column.dataset.calendarDate + "T" + String(Math.floor(minute / 60)).padStart(2, "0") + ":" + String(minute % 60).padStart(2, "0");
 }
 function calendarDragCleanup() {
@@ -7766,7 +7777,9 @@ document.addEventListener("click", async (event) => {
     if (Date.now() < calendarSkipClickUntil) return;
     selectedCalendarOccurrenceKey = calendarEventClick.dataset.calendarOccurrence || "";
     selectedCalendarEventId = calendarEventClick.dataset.calendarEvent;
+    // Keep keyboard focus on the event after rerender so Delete works immediately.
     renderAdmin();
+    document.querySelector(`[data-calendar-event="${CSS.escape(selectedCalendarEventId)}"][data-calendar-occurrence="${CSS.escape(selectedCalendarOccurrenceKey)}"]`)?.focus();
     return;
   }
 
@@ -8522,7 +8535,8 @@ document.addEventListener("pointerdown", (event) => {
   calendarCtrlDrag = {
     pointerId: event.pointerId, sourceId: button.dataset.calendarEvent,
     occurrenceKey: button.dataset.calendarOccurrence || "",
-    originX: event.clientX, originY: event.clientY, started: false
+    originX: event.clientX, originY: event.clientY,
+    grabOffset: Math.max(0, event.clientY - button.getBoundingClientRect().top), started: false
   };
   // Empêcher Ctrl+clic de sélectionner du texte, sans déclencher la duplication avant un déplacement.
   event.preventDefault();
@@ -8544,7 +8558,7 @@ document.addEventListener("pointermove", (event) => {
   const label = document.querySelector("#calendar-copy-drag-label");
   if (label) { label.style.left = (event.clientX + 14) + "px"; label.style.top = (event.clientY + 14) + "px"; }
   document.querySelectorAll(".calendar-drop-target").forEach((node) => node.classList.remove("calendar-drop-target"));
-  const destination = calendarPointDropDate(event.clientX, event.clientY);
+  const destination = calendarPointDropDate(event.clientX, event.clientY, drag.grabOffset);
   const column = document.elementFromPoint(event.clientX, event.clientY)?.closest(".calendar-day-column");
   if (destination && column) column.classList.add("calendar-drop-target");
   event.preventDefault();
@@ -8552,7 +8566,7 @@ document.addEventListener("pointermove", (event) => {
 document.addEventListener("pointerup", (event) => {
   const drag = calendarCtrlDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
-  const destination = drag.started ? calendarPointDropDate(event.clientX, event.clientY) : "";
+  const destination = drag.started ? calendarPointDropDate(event.clientX, event.clientY, drag.grabOffset) : "";
   calendarDragCleanup();
   if (drag.started) {
     calendarSkipClickUntil = Date.now() + 500;
@@ -8577,6 +8591,20 @@ document.addEventListener("dblclick", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-calendar-color-hex]")) {
+    const field = event.target;
+    const raw = field.value.trim().toUpperCase();
+    const picker = field.closest("form")?.querySelector("[data-calendar-color-picker]");
+    field.setCustomValidity(raw && !/^#[0-9A-F]{6}$/.test(raw) ? "Utilisez le format #RRGGBB." : "");
+    if (picker && /^#[0-9A-F]{6}$/.test(raw)) picker.value = raw;
+    return;
+  }
+  if (event.target.matches("[data-calendar-color-picker]")) {
+    const picker = event.target;
+    const hex = picker.closest("form")?.querySelector("[data-calendar-color-hex]");
+    if (hex) { hex.value = picker.value.toUpperCase(); hex.setCustomValidity(""); }
+    return;
+  }
   if (event.target.matches("[data-calendar-contact-query]")) { updateCalendarContactSearch(event.target.closest("[data-calendar-save]")); return; }
   if (event.target.matches("[data-trombi-contact-search]")) {
     refreshTrombinoscopeContactSearch(event.target.closest("[data-trombi-contact-linker]"));
@@ -8743,6 +8771,20 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if ((event.key === "Delete" || event.key === "Del") && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const focused = event.target;
+    const editing = focused?.closest?.('input, textarea, select, [contenteditable], [role="textbox"]');
+    if (!editing && activeAdminSection === "calendar" && selectedCalendarEventId && selectedCalendarEventId !== "__new") {
+      const item = (adminState.calendarEvents || []).find((entry) => entry.id === selectedCalendarEventId);
+      if (item && isAdmin()) {
+        event.preventDefault();
+        const recurring = item.recurrence && item.recurrence !== "none";
+        const warning = recurring ? "Supprimer toute la série récurrente de cet événement ?" : `Supprimer l'événement « ${item.title} » ?`;
+        if (confirm(warning)) deleteCalendarEvent(item.id);
+      }
+      return;
+    }
+  }
   const feature = event.target.closest?.("[data-campaign-feature]");
   if (!feature || !["Enter", " "].includes(event.key)) return;
   event.preventDefault();
