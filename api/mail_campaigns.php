@@ -113,8 +113,8 @@ function mailer_recipients(array $state, array $search): array {
         if (!is_array($contact) || !mailer_match($contact, $filters, $fields)) continue;
         $email = strtolower(trim((string)($contact['email'] ?? '')));
         if (!filter_var($email, FILTER_VALIDATE_EMAIL) || isset($seen[$email]) || isset($blocked[$email])) continue;
-        $seen[$email] = true;
         if (!mailer_opted_in($contact)) continue;
+        $seen[$email] = true;
         $out[] = ['email' => $email, 'firstName' => (string)($contact['firstName'] ?? ''), 'lastName' => (string)($contact['lastName'] ?? ''), 'city' => (string)($contact['city'] ?? '')];
     }
     return $out;
