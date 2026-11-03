@@ -143,7 +143,7 @@ function default_admin_state_seed(): array
         'activityLog' => [],
         'campaign' => ['geojson' => null, 'fileName' => '', 'assignments' => [], 'importedAt' => ''],
         'photoLibrary' => ['folders' => [], 'photos' => []],
-        'mobileAdminMenu' => ['dashboard', 'contacts', 'trombinoscope', 'calendar', 'permanence', 'death', 'special-letters', 'documents', 'homepage', 'content', 'photo-library', 'campaign-terrain', 'mobile-menu', 'map-settings'],
+        'mobileAdminMenu' => ['dashboard', 'contacts', 'trombinoscope', 'calendar', 'permanence', 'death', 'special-letters', 'documents', 'mail-templates', 'mail-campaigns', 'homepage', 'content', 'photo-library', 'campaign-terrain', 'mobile-menu', 'map-settings'],
         'filters' => [],
     ];
 }
