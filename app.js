@@ -9117,6 +9117,7 @@ document.addEventListener("submit", (event) => {
   const form = event.target.closest("[data-calendar-pdf-form]");
   if (!form) return;
   event.preventDefault();
+  event.stopImmediatePropagation();
   const data = new FormData(form);
   downloadCalendarAgendaPdf(String(data.get("from") || ""), String(data.get("to") || ""));
 }, true);
