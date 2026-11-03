@@ -3841,6 +3841,7 @@ function renderCalendarEditor(item) {
   const isNew = !item.id;
   return `<aside class="calendar-editor" aria-label="${isNew ? "Nouvel événement" : "Modifier l’événement"}">
     <header><div><h3>${isNew ? "Nouvel événement" : "Modifier l’événement"}</h3><p>${isNew ? "Choisissez librement la plage horaire." : "Cliquez sur un événement pour consulter ses contacts et ses détails."}</p></div><button type="button" data-calendar-close aria-label="Fermer">${localIcon("x")}</button></header>
+    ${item.campaignEventId && campaignMajorEventRecord(item.campaignEventId) ? `<div class="campaign-major-agenda-backlink"><button class="secondary-action compact" type="button" data-campaign-major-back="${attr(item.campaignEventId)}">Ouvrir la fiche événement de campagne</button></div>` : ""}
     <form data-calendar-save="${attr(item.id || "new")}">
       ${calendarLinkedContactIds(item).length ? `<p class="calendar-contact-summary">${calendarLinkedContactIds(item).length} contact(s) associé(s) — téléphone et email affichés ci-dessous.</p>` : ""}
       <fieldset class="calendar-contact-fieldset"><legend>Contacts associés</legend><p class="calendar-contact-help">Liez plusieurs contacts à cet événement. Cliquez sur un nom pour ouvrir sa fiche.</p>
@@ -3920,6 +3921,7 @@ function saveCalendarEvent(form) {
     recurrenceUntil: ["weekly", "monthly", "yearly"].includes(data.get("recurrence")) ? String(data.get("recurrenceUntil") || "") : "",
     contactIds: [...new Set(data.getAll("contactIds").map(String).filter((id) => contactById(id)))],
     assignedUserIds: [...new Set(data.getAll("assignedUserIds").map(String).filter(Boolean))].filter((id) => calendarTeamMembers().some((member) => member.id === id) || (previous?.assignedUserIds || []).includes(id)),
+    campaignEventId: previous?.campaignEventId || "",
     attendanceByDate: previous?.attendanceByDate || {},
     createdBy: previous?.createdBy || currentUserId,
     createdByName: previous?.createdByName || userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
@@ -3931,18 +3933,22 @@ function saveCalendarEvent(form) {
     return;
   }
   adminState.calendarEvents = previous ? adminState.calendarEvents.map((entry) => entry.id === id ? item : entry) : [item, ...(adminState.calendarEvents || [])];
+  const campaignMajor = (adminState.campaignEvents || []).find((entry) => entry.id === item.campaignEventId && entry.calendarEventId === item.id);
+  if (campaignMajor) { campaignMajor.title = item.title; campaignMajor.startAt = item.startAt; campaignMajor.endAt = item.endAt; campaignMajor.location = item.location; campaignMajor.description = item.body; campaignMajor.updatedAt = now; }
   selectedCalendarEventId = id;
   calendarCursor = startAt.slice(0, 10);
   delete adminFilters.calendarDraftStart;
-  saveAdminState(previous ? "modification" : "creation", "calendrier", item.title);
+  saveAdminState(previous ? "modification" : "creation", item.campaignEventId ? "evenement majeur campagne" : "calendrier", item.title);
 }
 
 function deleteCalendarEvent(id) {
   const item = (adminState.calendarEvents || []).find((entry) => entry.id === id);
   if (!item) return;
   adminState.calendarEvents = adminState.calendarEvents.filter((entry) => entry.id !== id);
+  const campaignMajor = (adminState.campaignEvents || []).find((entry) => entry.id === item.campaignEventId && entry.calendarEventId === id);
+  if (campaignMajor) campaignMajor.calendarEventId = "";
   selectedCalendarEventId = "";
-  saveAdminState("suppression", "calendrier", item.title);
+  saveAdminState("suppression", campaignMajor ? "evenement majeur campagne" : "calendrier", item.title);
 }
 
 function trombinoscopeCategoryById(id) {
@@ -8160,6 +8166,47 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (event.target.closest("[data-campaign-major-new]")) {
+    selectedCampaignMajorEventId = "new"; campaignMajorEventSearchText = ""; renderAdmin(); return;
+  }
+  const campaignMajorOpen = event.target.closest("[data-campaign-major-open]");
+  if (campaignMajorOpen) {
+    selectedCampaignMajorEventId = campaignMajorOpen.dataset.campaignMajorOpen;
+    campaignMajorEventSearchText = ""; renderAdmin(); return;
+  }
+  const campaignMajorAdd = event.target.closest("[data-campaign-major-add]");
+  if (campaignMajorAdd) { changeCampaignMajorParticipation(selectedCampaignMajorEventId, campaignMajorAdd.dataset.campaignMajorAdd, "add"); return; }
+  const campaignMajorRemove = event.target.closest("[data-campaign-major-remove]");
+  if (campaignMajorRemove) {
+    if (confirm("Retirer ce contact des participants ?")) changeCampaignMajorParticipation(selectedCampaignMajorEventId, campaignMajorRemove.dataset.campaignMajorRemove, "remove");
+    return;
+  }
+  const campaignMajorContact = event.target.closest("[data-campaign-major-contact]");
+  if (campaignMajorContact) {
+    if (!contactById(campaignMajorContact.dataset.campaignMajorContact)) return;
+    selectedContactId = campaignMajorContact.dataset.campaignMajorContact;
+    adminFilters.contacts = {perPage:contactSearchFilters().perPage,page:1};
+    clearContactSelection();activeAdminSection = "contacts";renderAdmin();return;
+  }
+  const campaignMajorExport = event.target.closest("[data-campaign-major-export]");
+  if (campaignMajorExport) { exportCampaignMajorParticipants(campaignMajorExport.dataset.campaignMajorExport); return; }
+  const campaignMajorLink = event.target.closest("[data-campaign-major-link-calendar]");
+  if (campaignMajorLink) { linkCampaignMajorCalendar(campaignMajorLink.dataset.campaignMajorLinkCalendar); return; }
+  const campaignMajorUnlink = event.target.closest("[data-campaign-major-unlink-calendar]");
+  if (campaignMajorUnlink) { unlinkCampaignMajorCalendar(campaignMajorUnlink.dataset.campaignMajorUnlinkCalendar); return; }
+  const campaignMajorDelete = event.target.closest("[data-campaign-major-delete]");
+  if (campaignMajorDelete) { deleteCampaignMajorEvent(campaignMajorDelete.dataset.campaignMajorDelete); return; }
+  const campaignMajorBack = event.target.closest("[data-campaign-major-back]");
+  if (campaignMajorBack) { selectedCampaignMajorEventId = campaignMajorBack.dataset.campaignMajorBack; activeAdminSection = "campaign-events"; renderAdmin(); return; }
+  const campaignMajorOpenCalendar = event.target.closest("[data-campaign-major-open-calendar]");
+  if (campaignMajorOpenCalendar) {
+    const item = campaignMajorEventCalendarRecord(campaignMajorEventRecord(campaignMajorOpenCalendar.dataset.campaignMajorOpenCalendar));
+    if (!item) return;
+    selectedCalendarEventId = item.id;
+    selectedCalendarOccurrenceKey = item.startAt.slice(0,10);
+    calendarCursor = selectedCalendarOccurrenceKey;
+    calendarView = "day"; activeAdminSection = "calendar"; renderAdmin(); return;
+  }
   const attendeeAdd = event.target.closest("[data-attendance-add]");
   if (attendeeAdd) {
     const panel = attendeeAdd.closest("[data-calendar-attendance]");
@@ -8839,6 +8886,8 @@ document.addEventListener("submit", async (event) => {
   if (photoUpdate) { event.preventDefault(); const photo = adminState.photoLibrary.photos.find((item) => item.id === photoUpdate.dataset.photoUpdate); if (!photo) return; const data = new FormData(photoUpdate); if (!photo.eventId || !state.agenda.some((item) => item.id === photo.eventId)) { photo.commune = String(data.get("commune") || "").trim().slice(0, 120); photo.takenAt = String(data.get("takenAt") || ""); } photo.alt = String(data.get("alt") || "").trim().slice(0, 300); publishPhotoLibrary("modification photo", photo.fileName); return; }
   const categorySave = form.closest("[data-calendar-category-save]");
   if (categorySave) { event.preventDefault(); saveCalendarCategory(categorySave); return; }
+  const campaignMajorSave = form.closest("[data-campaign-major-save]");
+  if (campaignMajorSave) { event.preventDefault(); saveCampaignMajorEvent(campaignMajorSave); return; }
   const calendarSave = form.closest("[data-calendar-save]");
   if (calendarSave) { event.preventDefault(); saveCalendarEvent(calendarSave); return; }
   if (form.id === "hero-search-form") {
@@ -9017,6 +9066,13 @@ document.addEventListener("dblclick", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-campaign-major-search]")) {
+    campaignMajorEventSearchText = event.target.value;
+    const entry = campaignMajorEventRecord(selectedCampaignMajorEventId);
+    const results = event.target.closest("[data-campaign-major-attendance]")?.querySelector("[data-campaign-major-results]");
+    if (entry && results) results.innerHTML = renderCampaignMajorContactResults(entry, campaignMajorEventSearchText);
+    return;
+  }
   if (event.target.matches("[data-attendance-search]")) { searchCalendarAttendance(event.target); return; }
   if (event.target.matches("[data-calendar-color-hex]")) {
     const field = event.target;
@@ -9067,6 +9123,10 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-campaign-major-status]")) {
+    changeCampaignMajorParticipation(selectedCampaignMajorEventId, event.target.dataset.campaignMajorStatus, event.target.checked ? event.target.value : "registered");
+    return;
+  }
   if (event.target.matches("[data-attendance-check]")) {
     const panel = event.target.closest("[data-calendar-attendance]");
     const status = event.target.checked ? event.target.value : "registered";
