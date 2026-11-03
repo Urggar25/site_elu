@@ -143,7 +143,7 @@
 
   function calculate() {
     if (!source) return null;
-    const contacts = adminState.localContacts || [];
+    const contacts = (adminState.localContacts || []).filter((contact) => contact.entityType !== "institution");
     const byTown = new Map();
     for (const contact of contacts) {
       const town = communeKey(contact.city);
@@ -160,6 +160,7 @@
     }
     const updated = new Map();
     const created = [];
+    const institutionsUpdated = new Map();
     const conflicts = [];
     const warnings = [...source.skipped];
     let addedMaires = 0, addedAdjoints = 0, formerMaires = 0, notFound = 0, unchanged = 0;
@@ -172,6 +173,7 @@
       else unchanged++;
     };
     for (const town of towns.values()) {
+      const institution = (adminState.institutions || []).find((item) => communeKey(item.city) === communeKey(town.commune));
       if (town.mayors.size > 1) {
         conflicts.push(town.commune + " : plusieurs maires distincts dans le fichier. Commune ignorée.");
         continue;
@@ -187,6 +189,11 @@
           const next = updated.get(existing.id) || existing;
           apply(next, removeTag(tagList(next), "maire"), key(next.category) === "maire" ? "elu local" : next.category);
           formerMaires++;
+          if (institution && Array.isArray(next.mandates)) {
+            const mandates = next.mandates.map((mandate) => mandate.role === "maire" && mandate.institutionId === institution.id && mandate.active
+              ? { ...mandate, active: false, endDate: new Date().toISOString().slice(0, 10) } : mandate);
+            updated.set(next.id, { ...(updated.get(next.id) || next), mandates });
+          }
         }
       }
       for (const person of town.officials) {
@@ -204,6 +211,11 @@
             city: person.commune, category: person.role === "maire" ? "maire" : "elu local",
             keywords: [person.role]
           }, usedIds);
+          if (institution) {
+            entry.entityType = "person";
+            entry.institutionId = institution.id;
+            entry.mandates = [{ role: person.role, institutionId: institution.id, startDate: "", endDate: "", active: true }];
+          }
           created.push(entry);
           local.push(entry);
           if (person.role === "maire") addedMaires++;
@@ -218,11 +230,33 @@
           if (!hasTag(existing, "adjoint")) addedAdjoints++;
           apply(existing, addTag(tagList(existing), "adjoint"), existing.category || "elu local");
         }
+        if (institution) {
+          const current = matches.length ? (updated.get(matches[0].id) || matches[0]) : local[local.length - 1];
+          if (current && current.id) {
+            const mandates = Array.isArray(current.mandates) ? current.mandates.slice() : [];
+            if (!mandates.some((m) => m.institutionId === institution.id && m.role === person.role && m.active)) {
+              mandates.push({ role: person.role, institutionId: institution.id, startDate: "", endDate: "", active: true });
+            }
+            const next = { ...current, entityType: "person", institutionId: institution.id, mandates };
+            if (created.some((c) => c.id === current.id)) {
+              const index = created.findIndex((c) => c.id === current.id);
+              created[index] = next;
+              const localIndex = local.findIndex((c) => c.id === current.id);
+              if (localIndex >= 0) local[localIndex] = next;
+            } else updated.set(current.id, next);
+            if (person.role === "maire") {
+              institutionsUpdated.set(institution.id, { ...institution, mayorContactId: current.id, updatedAt: new Date().toISOString() });
+            } else {
+              const already = institutionsUpdated.get(institution.id) || institution;
+              institutionsUpdated.set(institution.id, { ...already, deputyContactIds: [...new Set([...(already.deputyContactIds || []), current.id])], updatedAt: new Date().toISOString() });
+            }
+          }
+        }
       }
     }
-    return { updated: [...updated.values()], created, conflicts, warnings, towns: towns.size,
+    return { updated: [...updated.values()], created, institutionsUpdated: [...institutionsUpdated.values()], conflicts, warnings, towns: towns.size,
       addedMaires, addedAdjoints, formerMaires, notFound, unchanged,
-      changed: updated.size + created.length };
+      changed: updated.size + created.length + institutionsUpdated.size };
   }
 
   function render() {
@@ -254,7 +288,7 @@
         <div><h3>Prévisualisation : ${escape(source.fileName)}</h3>
           <p>${source.persons.length} lignes d'élus reconnues. ${plan.changed} fiche(s) à modifier ou créer. Aucun changement n'est effectué avant confirmation.</p></div>
         ${counts}
-        <p>${plan.notFound} personne(s) absente(s) non créées ; ${plan.unchanged} élément(s) déjà à jour.</p>
+        <p>${plan.notFound} personne(s) absente(s) non créées ; ${plan.unchanged} élément(s) déjà à jour. ${plan.institutionsUpdated.length} institution(s) associée(s).</p>
         ${plan.conflicts.length || plan.warnings.length ? `<div class="adjoint-alert"><strong>${plan.conflicts.length} conflit(s) et ${plan.warnings.length} ligne(s) incomplète(s)</strong>
           <ul>${[...plan.conflicts, ...plan.warnings].slice(0, 25).map((warning) => `<li>${escape(warning)}</li>`).join("")}</ul>
           ${plan.conflicts.length + plan.warnings.length > 25 ? "<p>Liste limitée aux 25 premiers avertissements.</p>" : ""}</div>` : ""}
@@ -295,8 +329,10 @@
       " adjoint(s) tagués, " + plan.created.length + " fiche(s) créées.";
     busy = true;
     adminState.localContacts = adminState.localContacts.map((person) => replacements.get(person.id) || person).concat(plan.created);
+    const byInstitution = new Map(plan.institutionsUpdated.map((item) => [item.id, item]));
+    adminState.institutions = (adminState.institutions || []).map((item) => byInstitution.get(item.id) || item);
     try {
-      const saved = await saveAdminStateToDatabaseOnly("import", "contacts adjoint", detail, previousState);
+      const saved = await saveAdminStateToDatabaseOnly("import", "institution contacts adjoint", detail, previousState);
       if (saved) {
         report = detail;
         source = null;
