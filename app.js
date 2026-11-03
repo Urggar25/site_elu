@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-contact-links-v1";
+const ASSET_VERSION = "20261103-calendar-contact-details-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -3118,8 +3118,7 @@ function renderCalendarTimedEvent(item) {
   const duration = Math.max(30, (end.getTime() - start.getTime()) / 60000);
   const top = Math.max(0, startMinutes - 7 * 60);
   const height = Math.max(30, Math.min(duration, 13 * 60 - top));
-  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""}" style="--event-top:${top}px;--event-height:${height}px" type="button" data-calendar-event="${attr(item.id)}" title="Double-cliquez pour modifier la description">
-    <time>${text(calendarTimeLabel(item.startAt))} – ${text(calendarTimeLabel(item.endAt))}</time>
+  return `<button class="calendar-event tone-${attr(item.color)} ${selectedCalendarEventId === item.id ? "is-selected" : ""}" style="--event-top:${top}px;--event-height:${height}px" type="button" data-calendar-event="${attr(item.id)}" title="${attr(`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)} · Double-cliquez pour modifier`)}">
     <strong>${text(item.title)}</strong>
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
@@ -3157,7 +3156,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}"><time>${text(calendarTimeLabel(item.startAt))}</time>${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)}" type="button" data-calendar-event="${attr(item.id)}" title="${attr(`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`)}">${text(item.title)}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3182,14 +3181,41 @@ function calendarDraftEvent() {
 function calendarLinkedContactIds(item = {}) {
   return [...new Set((item.contactIds || []).filter((id) => contactById(id)))];
 }
+function calendarContactChannels(contact = {}) {
+  const contacts = [
+    ["Portable", String(contact.mobile || "").trim()],
+    ["Téléphone", String(contact.phone || "").trim()]
+  ];
+  const seenPhones = new Set();
+  const phones = contacts.filter(([, value]) => {
+    const digits = value.replace(/\\D/g, "");
+    if (digits.length < 6 || seenPhones.has(digits)) return false;
+    seenPhones.add(digits);
+    return true;
+  }).map(([label, value]) => {
+    const number = value.replace(/[^\\d+]/g, "");
+    return `<a class="calendar-contact-channel" href="tel:${attr(number)}" title="Appeler ${attr(contactDisplayName(contact))}">${text(label)} : ${text(value)}</a>`;
+  });
+  const email = String(contact.email || "").trim();
+  if (/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    phones.push(`<a class="calendar-contact-channel" href="mailto:${attr(email)}" title="Écrire à ${attr(contactDisplayName(contact))}">${text(email)}</a>`);
+  }
+  return phones.join("");
+}
+
 function calendarLinkedContactMarkup(ids) {
   return ids.map((id) => {
     const contact = contactById(id);
-    return contact ? `<div class="calendar-contact-chip">
-      <button type="button" class="calendar-contact-open" data-calendar-open-contact="${attr(id)}" title="Ouvrir la fiche contact">${text(contactDisplayName(contact))}${contact.city ? ` · ${text(contact.city)}` : ""}</button>
+    if (!contact) return "";
+    const channels = calendarContactChannels(contact);
+    return `<div class="calendar-contact-chip">
+      <div class="calendar-contact-info">
+        <button type="button" class="calendar-contact-open" data-calendar-open-contact="${attr(id)}" title="Ouvrir la fiche contact">${text(contactDisplayName(contact))}${contact.city ? ` · ${text(contact.city)}` : ""}</button>
+        ${channels ? `<div class="calendar-contact-channels">${channels}</div>` : ""}
+      </div>
       <input type="hidden" name="contactIds" value="${attr(id)}" />
       <button type="button" class="calendar-contact-unlink" data-calendar-unlink-contact="${attr(id)}" aria-label="Retirer ${attr(contactDisplayName(contact))} de cet événement">×</button>
-    </div>` : "";
+    </div>`;
   }).join("");
 }
 function updateCalendarContactSearch(form) {
