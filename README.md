@@ -64,3 +64,53 @@ Ne jamais mettre les identifiants MySQL dans `app.js` ni publier `api/db.php` da
 ## Donnees cartographiques
 
 Le fichier `assets/communes-70-haute-saone.geojson` vient du projet public `gregoiredavid/france-geojson`.
+
+
+## Modèles de mails et campagnes vers les recherches de contacts
+
+Dans **Administration → Permanence → Modèles de mails**, créer des modèles avec un nom,
+un objet et un corps en texte brut. Les variables acceptées sont `{{prenom}}`, `{{nom}}` et `{{commune}}`.
+Ces modèles sont stockés dans l'état administratif MySQL (`mailTemplates`).
+
+Dans **Administration → Permanence → Envoi de mails**, choisir une recherche avancée
+de contacts déjà sauvegardée et un modèle. La prévisualisation recalcule le nombre de
+destinataires depuis la base serveur. Après confirmation explicite, une campagne est créée,
+puis envoyée individuellement par lots de cinq via l'API transactionnelle de Brevo.
+La progression et les échecs sont consultables dans l'historique. Si la page est fermée,
+l'envoi peut être repris manuellement. Le statut « envoyé » signifie **accepté par le prestataire**,
+pas nécessairement livré dans la boîte de réception.
+
+### Relier une adresse expéditrice
+
+Créer un compte Brevo, vérifier l'adresse ou le domaine expéditeur dans Brevo et
+activer l'API transactionnelle. **Sur l'hébergement, uniquement dans `api/db.php`
+(non versionné), après les paramètres existants**, ajouter :
+
+```php
+define('BREVO_API_KEY', 'cle-api-brevo-privee');
+define('CAMPAIGN_FROM_EMAIL', 'permanence@exemple.fr');
+define('CAMPAIGN_FROM_NAME', 'Permanence parlementaire');
+```
+
+Ces valeurs ne doivent **jamais** être ajoutées à GitHub ou à `app.js`.
+Le serveur PHP doit disposer de cURL et d'un accès HTTPS sortant à Brevo.
+L'interface indique si un expéditeur est configuré, mais le prestataire peut
+rejeter l'envoi si l'adresse n'est pas vérifiée ou si le compte n'est pas activé.
+
+### Consentement, désinscription et limites
+
+Les envois ne sont possibles que pour les contacts ayant une adresse valide et
+un statut **« Statut de l'email pour les campagnes »** renseigné explicitement
+avec une valeur autorisée (`oui`, `inscrit`, `opt-in`, `consentement`, etc.).
+Ce champ doit correspondre à un consentement réellement obtenu et documenté :
+il ne suffit pas de l'activer arbitrairement. Le système exclut les destinataires
+désinscrits et les adresses en doublon. Chaque message comporte un lien personnel
+de désinscription, qui alimente la table `mail_suppressions`. Une confirmation
+est exigée avant toute préparation d'envoi. Maximum 250 adresses admissibles
+par campagne. Les campagnes sont historisées en MySQL dans `mail_campaigns`
+et `mail_campaign_recipients` ; les tables sont créées automatiquement.
+
+Ce système ne remplace pas une politique de protection des données, de durée
+de conservation, ni le suivi des preuves de consentement. Les messages marqués
+« processing » lors d'une interruption serveur ne sont pas automatiquement
+réémis, afin d'éviter les doublons : contrôler leur statut chez le prestataire.

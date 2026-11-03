@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-saved-contact-searches-v1";
+const ASSET_VERSION = "20261103-mail-campaigns-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -28,7 +28,9 @@ const adminMenu = {
         ["death", "Gestion des deces", "mail"],
         ["special-letters", "Courriers speciaux", "doc"],
         ["permanence", "Dossiers locaux", "star"],
-        ["documents", "Nos documents", "file"]
+        ["documents", "Nos documents", "file"],
+        ["mail-templates", "Modèles de mails", "mail"],
+        ["mail-campaigns", "Envoi de mails", "mail"]
       ]
     },
     {
@@ -89,6 +91,7 @@ let state = loadState();
 let adminState = loadAdminState();
 let activePanel = "accueil";
 let activeAdminSection = "dashboard";
+let mailCampaignUI = { configured: false, senderEmail: "", history: [], preview: null, busy: false, message: "", activeId: "", templateId: "", searchId: "", consentConfirmed: false };
 let adminNavExpanded = { permanence: true, site: false, campaign: true, options: false };
 let activeSearchType = "all";
 let selectedCommune = "";
@@ -224,6 +227,7 @@ function defaultAdminState() {
     contactFields: defaultContactFields(),
     localContacts: [],
     savedContactSearches: [],
+    mailTemplates: [],
     trombinoscopeCategories: [],
     trombinoscopePeople: [],
     contactKeywords: [
@@ -257,7 +261,7 @@ function defaultAdminState() {
     activityLog: [],
     campaign: { geojson: null, fileName: "", assignments: {}, importedAt: "" },
     photoLibrary: { folders: [], photos: [] },
-    mobileAdminMenu: ["dashboard", "contacts", "trombinoscope", "calendar", "permanence", "death", "special-letters", "documents", "homepage", "content", "photo-library", "campaign-terrain", "mobile-menu", "map-settings"]
+    mobileAdminMenu: ["dashboard", "contacts", "trombinoscope", "calendar", "permanence", "death", "special-letters", "documents", "mail-templates", "mail-campaigns", "homepage", "content", "photo-library", "campaign-terrain", "mobile-menu", "map-settings"]
   };
 }
 
@@ -402,6 +406,7 @@ function normalizeAdminState(value) {
     contactFields: normalizeContactFields(value.contactFields || []),
     localContacts: contacts,
     savedContactSearches: normalizeSavedContactSearches(value.savedContactSearches),
+    mailTemplates: normalizeMailTemplates(value.mailTemplates),
     trombinoscopeCategories,
     trombinoscopePeople,
     contactKeywords: normalizeKeywords(value.contactKeywords || []),
@@ -995,6 +1000,7 @@ function adminChangeKeysForTarget(target = "") {
   const normalized = normalizeName(target);
   if (["administration", "sync", "synchronisation"].includes(normalized)) return null;
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
+  if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
   if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
@@ -1989,6 +1995,8 @@ function renderAdminView() {
   if (activeAdminSection === "permanence") return renderPermanence();
   if (activeAdminSection === "trombinoscope") return renderTrombinoscope();
   if (activeAdminSection === "templates") return renderTemplates();
+  if (activeAdminSection === "mail-templates") return renderMailTemplates();
+  if (activeAdminSection === "mail-campaigns") return renderMailCampaigns();
   if (activeAdminSection === "contacts") return renderContacts();
   if (activeAdminSection === "calendar") return renderCalendar();
   if (activeAdminSection === "contact-io") return renderContactImportExport();
@@ -2500,6 +2508,163 @@ function localIcon(name) {
     x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>'
   };
   return icons[name] || icons.file;
+}
+
+
+function normalizeMailTemplates(items) {
+  return (Array.isArray(items) ? items : []).filter((item) => item && typeof item === "object" && item.id).map((item) => ({
+    id: String(item.id), title: String(item.title || "").slice(0, 150),
+    subject: String(item.subject || "").slice(0, 250),
+    body: String(item.body || "").slice(0, 20000),
+    createdAt: String(item.createdAt || ""), updatedAt: String(item.updatedAt || "")
+  }));
+}
+function renderMailTemplates() {
+  const items = normalizeMailTemplates(adminState.mailTemplates);
+  const selected = items.find((item) => item.id === adminFilters.mailTemplateId) || null;
+  return `<section class="mail-workspace">
+    <header class="mail-workspace-header"><div><h2>Modèles de mails</h2><p>Rédigez des messages réutilisables pour vos contacts.</p></div>
+    <button class="primary-action" type="button" data-mail-template-new>+ Nouveau modèle</button></header>
+    <p class="mail-helper">Variables disponibles : <code>{{prenom}}</code>, <code>{{nom}}</code>, <code>{{commune}}</code>. Chaque destinataire reçoit un mail individuel.</p>
+    <div class="mail-columns"><div class="mail-template-list">
+      ${items.map((item) => `<button type="button" class="mail-template-row ${selected?.id === item.id ? "is-active" : ""}" data-mail-template-select="${attr(item.id)}"><strong>${text(item.title)}</strong><small>${text(item.subject)}</small></button>`).join("") || empty("Aucun modèle enregistré.")}
+    </div>
+    <form class="admin-form mail-editor" data-mail-template-save="${attr(selected?.id || "new")}">
+      <h3>${selected ? "Modifier le modèle" : "Créer un modèle"}</h3>
+      <label>Nom du modèle<input name="title" required maxlength="150" value="${attr(selected?.title || "")}" placeholder="Ex. Invitation réunion publique" /></label>
+      <label>Objet de l'email<input name="subject" required maxlength="250" value="${attr(selected?.subject || "")}" /></label>
+      <label>Contenu du mail<textarea name="body" required rows="13" maxlength="20000" placeholder="Bonjour {{prenom}}, ...">${text(selected?.body || "")}</textarea></label>
+      <div class="mail-editor-actions"><button class="primary-action" type="submit">Enregistrer le modèle</button>
+      ${selected ? `<button class="secondary-action danger" type="button" data-mail-template-delete="${attr(selected.id)}">Supprimer</button>` : ""}</div>
+    </form></div>
+  </section>`;
+}
+function saveMailTemplate(form) {
+  const data = new FormData(form);
+  const title = String(data.get("title") || "").trim();
+  const subject = String(data.get("subject") || "").trim();
+  const body = String(data.get("body") || "").trim();
+  if (!title || !subject || !body) { showToast("Renseignez le nom, l'objet et le contenu."); return; }
+  const previous = normalizeMailTemplates(adminState.mailTemplates);
+  const existing = previous.find((entry) => entry.id === form.dataset.mailTemplateSave);
+  const now = new Date().toISOString();
+  const item = {
+    id: existing?.id || crypto.randomUUID(), title: title.slice(0, 150), subject: subject.slice(0, 250),
+    body: body.slice(0, 20000), createdAt: existing?.createdAt || now, updatedAt: now
+  };
+  adminState.mailTemplates = existing ? previous.map((entry) => entry.id === existing.id ? item : entry) : [item, ...previous];
+  adminFilters.mailTemplateId = item.id;
+  saveAdminState(existing ? "modification" : "creation", "modele email", item.title);
+  showToast("Modèle enregistré.");
+}
+function deleteMailTemplate(id) {
+  const item = (adminState.mailTemplates || []).find((entry) => entry.id === id);
+  if (!item || !confirm(`Supprimer le modèle « ${item.title} » ?`)) return;
+  adminState.mailTemplates = adminState.mailTemplates.filter((entry) => entry.id !== id);
+  adminFilters.mailTemplateId = "";
+  saveAdminState("suppression", "modele email", item.title);
+}
+async function mailCampaignRequest(action, payload = null) {
+  return apiJson(`mail_campaigns.php?action=${encodeURIComponent(action)}`, payload);
+}
+async function loadMailCampaignOverview() {
+  try {
+    const [status, history] = await Promise.all([mailCampaignRequest("status"), mailCampaignRequest("history")]);
+    mailCampaignUI.configured = Boolean(status.configured);
+    mailCampaignUI.senderEmail = status.senderEmail || "";
+    mailCampaignUI.senderName = status.senderName || "";
+    mailCampaignUI.history = history.campaigns || [];
+    mailCampaignUI.message = "";
+  } catch (error) { mailCampaignUI.message = error.message; }
+  if (activeAdminSection === "mail-campaigns") renderAdmin();
+}
+function mailCampaignSelection() {
+  const form = document.querySelector("[data-mail-campaign-form]");
+  if (!form) return null;
+  const values = new FormData(form);
+  return { searchId: String(values.get("searchId") || ""), templateId: String(values.get("templateId") || ""), consentConfirmed: values.get("consentConfirmed") === "1" };
+}
+function renderMailCampaigns() {
+  const templates = normalizeMailTemplates(adminState.mailTemplates);
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const preview = mailCampaignUI.preview;
+  return `<section class="mail-workspace">
+    <header class="mail-workspace-header"><div><h2>Envoi de mails</h2><p>Envoyez un modèle aux contacts d'une recherche enregistrée.</p></div>
+    <button class="secondary-action" type="button" data-mail-refresh>Rafraîchir</button></header>
+    <div class="mail-sender-state ${mailCampaignUI.configured ? "is-ready" : "is-missing"}">
+      <strong>Expéditeur : ${text(mailCampaignUI.senderEmail || "Non configuré")}</strong>
+      <p>${mailCampaignUI.configured ? "Connexion au prestataire configurée côté serveur." : "Pour activer l'envoi, renseignez BREVO_API_KEY et CAMPAIGN_FROM_EMAIL dans api/db.php sur votre hébergement. L'adresse doit être vérifiée auprès de Brevo."}</p>
+    </div>
+    <form class="admin-form mail-campaign-form" data-mail-campaign-form>
+      <label>Liste de contacts (recherche enregistrée)
+        <select name="searchId" required><option value="">Choisir une liste…</option>
+        ${searches.map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
+      </label>
+      <label>Modèle de mail
+        <select name="templateId" required><option value="">Choisir un modèle…</option>
+        ${templates.map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.templateId === item.id ? "selected" : ""}>${text(item.title)}</option>`).join("")}</select>
+      </label>
+      <div class="mail-campaign-actions">
+        <button class="secondary-action" type="button" data-mail-preview ${mailCampaignUI.busy ? "disabled" : ""}>Prévisualiser les destinataires</button>
+        <button class="secondary-action" type="button" data-admin-section="mail-templates">Gérer les modèles</button>
+        <button class="secondary-action" type="button" data-admin-section="contacts">Gérer les recherches</button>
+      </div>
+      ${preview ? `<div class="mail-preview"><h3>${Number(preview.total || 0)} destinataire(s) éligible(s)</h3>
+        <p>La sélection exclut les contacts sans consentement explicite, les adresses invalides, les doublons et les désinscrits.</p>
+        <p>Aperçu : ${(preview.sample || []).map((item) => text(item.email)).join(" · ") || "Aucun destinataire éligible."}</p>
+      </div>` : ""}
+      <label class="mail-consent-check"><input type="checkbox" name="consentConfirmed" value="1" ${mailCampaignUI.consentConfirmed ? "checked" : ""} />
+      Je confirme que ces personnes ont accepté de recevoir ces communications et que leur utilisation respecte les règles applicables.</label>
+      <button class="primary-action" type="button" data-mail-send ${mailCampaignUI.busy || !mailCampaignUI.configured || !preview?.total ? "disabled" : ""}>Créer et envoyer la campagne</button>
+      <p class="mail-helper">Maximum 250 destinataires par envoi. Statut de contact obligatoire : « oui », « inscrit », « opt-in » ou « consentement ». Désinscription automatique insérée dans chaque message. L'envoi peut être repris si la page se ferme.</p>
+    </form>
+    ${mailCampaignUI.message ? `<p class="mail-action-message" role="status">${text(mailCampaignUI.message)}</p>` : ""}
+    <section class="mail-campaign-history"><h3>Historique des campagnes</h3>
+      ${mailCampaignUI.history.map((item) => `<div class="mail-history-item"><div><strong>${text(item.title)}</strong><small>${text(formatDate(item.created_at))} · ${text(item.sender_email)} · ${Number(item.sent || 0)} envoyé(s), ${Number(item.failed || 0)} échec(s), ${Number(item.pending || 0)} en attente</small></div>
+        ${Number(item.pending || 0) > 0 && item.status !== "cancelled" ? `<button class="secondary-action compact" type="button" data-mail-resume="${attr(item.id)}" ${mailCampaignUI.busy ? "disabled" : ""}>Reprendre l'envoi</button>` : ""}
+      </div>`).join("") || empty("Aucune campagne.")}
+    </section>
+  </section>`;
+}
+async function previewMailCampaign() {
+  const values = mailCampaignSelection();
+  if (!values?.searchId || !values?.templateId) { showToast("Sélectionnez une liste et un modèle."); return; }
+  mailCampaignUI.busy = true; mailCampaignUI.message = "Calcul des destinataires…"; renderAdmin();
+  try {
+    mailCampaignUI.preview = await mailCampaignRequest("preview", values);
+    mailCampaignUI.searchId = values.searchId;
+    mailCampaignUI.templateId = values.templateId;
+    mailCampaignUI.consentConfirmed = values.consentConfirmed;
+    mailCampaignUI.message = "Aperçu actualisé depuis la base.";
+  } catch (error) { mailCampaignUI.preview = null; mailCampaignUI.message = error.message; }
+  finally { mailCampaignUI.busy = false; renderAdmin(); }
+}
+async function dispatchMailCampaign(id) {
+  mailCampaignUI.busy = true;
+  try {
+    for (let step = 0; step < 60; step += 1) {
+      const response = await mailCampaignRequest("dispatch", { id });
+      const item = response.campaign || {};
+      mailCampaignUI.message = `Campagne : ${Number(item.sent || 0)} envoyé(s), ${Number(item.failed || 0)} échec(s), ${Number(item.pending || 0)} en attente.`;
+      if (!Number(item.pending || 0)) break;
+    }
+    const history = await mailCampaignRequest("history");
+    mailCampaignUI.history = history.campaigns || [];
+  } catch (error) { mailCampaignUI.message = `Envoi interrompu : ${error.message}. Utilisez « Reprendre l'envoi » pour poursuivre.`; }
+  finally { mailCampaignUI.busy = false; renderAdmin(); }
+}
+async function sendMailCampaign() {
+  const values = mailCampaignSelection();
+  if (!values?.searchId || !values?.templateId || !values.consentConfirmed) { showToast("Choisissez la liste, le modèle et confirmez le consentement."); return; }
+  if (!mailCampaignUI.preview || mailCampaignUI.searchId !== values.searchId || mailCampaignUI.templateId !== values.templateId) { showToast("Actualisez l'aperçu avant l'envoi."); return; }
+  if (!confirm(`Confirmer l'envoi individuel à ${mailCampaignUI.preview.total} destinataire(s) éligible(s) ?`)) return;
+  mailCampaignUI.busy = true; mailCampaignUI.message = "Préparation de la campagne…"; renderAdmin();
+  try {
+    const result = await mailCampaignRequest("prepare", values);
+    mailCampaignUI.preview = null;
+    mailCampaignUI.activeId = result.campaign.id;
+    await dispatchMailCampaign(result.campaign.id);
+  } catch (error) { mailCampaignUI.message = error.message; mailCampaignUI.busy = false; renderAdmin(); }
 }
 
 function renderTemplates() {
@@ -7116,6 +7281,7 @@ document.addEventListener("click", async (event) => {
   if (admin && canModerate()) {
     activeAdminSection = admin.dataset.adminSection;
     renderAdmin();
+    if (activeAdminSection === "mail-campaigns") loadMailCampaignOverview();
     window.scrollTo(0, 0);
   }
 
@@ -7558,6 +7724,17 @@ document.addEventListener("click", async (event) => {
     renderAdmin();
   }
 
+  if (event.target.closest("[data-mail-template-new]")) { adminFilters.mailTemplateId = ""; renderAdmin(); return; }
+  const mailTemplateSelect = event.target.closest("[data-mail-template-select]");
+  if (mailTemplateSelect) { adminFilters.mailTemplateId = mailTemplateSelect.dataset.mailTemplateSelect; renderAdmin(); return; }
+  const mailTemplateDelete = event.target.closest("[data-mail-template-delete]");
+  if (mailTemplateDelete) { deleteMailTemplate(mailTemplateDelete.dataset.mailTemplateDelete); return; }
+  if (event.target.closest("[data-mail-refresh]")) { await loadMailCampaignOverview(); return; }
+  if (event.target.closest("[data-mail-preview]")) { await previewMailCampaign(); return; }
+  if (event.target.closest("[data-mail-send]")) { await sendMailCampaign(); return; }
+  const mailResume = event.target.closest("[data-mail-resume]");
+  if (mailResume && !mailCampaignUI.busy) { await dispatchMailCampaign(mailResume.dataset.mailResume); return; }
+
   const contactSelectPage = event.target.closest("[data-contact-select-page]");
   if (contactSelectPage) {
     selectedAllFilteredContacts = false;
@@ -7895,6 +8072,9 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  const mailTemplateSave = form.closest("[data-mail-template-save]");
+  if (mailTemplateSave) { event.preventDefault(); saveMailTemplate(mailTemplateSave); return; }
+
   const taskCreate = form.closest("[data-task-create]");
   if (taskCreate) { event.preventDefault(); createTask(taskCreate); return; }
   const taskUpdate = form.closest("[data-task-update]");
@@ -8019,6 +8199,8 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches('[data-mail-campaign-form] select')) { mailCampaignUI.preview = null; mailCampaignUI.searchId = String(document.querySelector('[data-mail-campaign-form] select[name="searchId"]')?.value || ""); mailCampaignUI.templateId = String(document.querySelector('[data-mail-campaign-form] select[name="templateId"]')?.value || ""); mailCampaignUI.consentConfirmed = Boolean(document.querySelector('[data-mail-campaign-form] input[name="consentConfirmed"]')?.checked); renderAdmin(); return; }
+  if (event.target.matches('[data-mail-campaign-form] input[name="consentConfirmed"]')) { mailCampaignUI.consentConfirmed = event.target.checked; return; }
   beginAdminMutationSnapshot();
   if (event.target.matches("[data-trombi-photo-input]")) {
     const file = event.target.files?.[0];
