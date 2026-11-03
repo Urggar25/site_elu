@@ -110,6 +110,8 @@ function default_admin_state_seed(): array
         'templates' => [],
         'parliamentWork' => [],
         'localContacts' => [],
+        'savedContactSearches' => [],
+        'mailTemplates' => [],
         'trombinoscopeCategories' => [],
         'trombinoscopePeople' => [],
         'permanenceRequests' => [],
