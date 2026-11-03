@@ -243,6 +243,9 @@ async function persistMigration() {
   const action=plan();
   if(!action.created.length)return;
   if(!confirm("Créer "+action.created.length+" mairie(s) et modifier "+action.changed.length+" fiche(s) ? Une sauvegarde JSON est recommandée avant confirmation."))return;
+  // Automatically export a full pre-migration snapshot before any write.
+  downloadFile("sauvegarde-avant-migration-"+new Date().toISOString().slice(0,10)+".json",
+    JSON.stringify(snapshot(),null,2),"application/json;charset=utf-8");
   const previousState=cloneAdminState();
   busy=true;
   const replace=new Map(action.changed.map(x=>[x.id,x]));
