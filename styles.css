@@ -11362,3 +11362,37 @@ body.admin-mode .calendar-event:has(.calendar-my-assignment) > strong { padding-
 .calendar-category-form input[data-calendar-color-hex] { width: 138px; max-width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; text-transform: uppercase; letter-spacing: .025em; }
 .calendar-category-form #calendar-hex-help { flex: 1 1 100%; font-size: .78rem; color: #536781; }
 body.admin-mode .calendar-event.is-categorized .calendar-my-assignment { background: #fff1bd; color: #643b04; }
+
+/* Inscription et émargement des participants aux événements de l'agenda */
+body.admin-mode .calendar-attendance-panel {
+  display: grid; gap: .65rem; margin: 0 0 1rem; padding: .75rem;
+  border: 1px solid #b7cee9; border-radius: 10px; background: #f7faff; min-width: 0;
+}
+body.admin-mode .calendar-attendance-panel > header { display: flex; align-items: center; justify-content: space-between; gap: .45rem; flex-wrap: wrap; }
+body.admin-mode .calendar-attendance-panel h4 { margin: 0; font-size: .95rem; }
+body.admin-mode .calendar-attendance-panel > header button { font-size: .73rem; padding: .4rem .5rem; }
+body.admin-mode .calendar-attendance-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+body.admin-mode .calendar-attendance-stats > div { border-radius: 8px; padding: .5rem; background: white; border: 1px solid #d8e4f4; display: grid; gap: .1rem; }
+body.admin-mode .calendar-attendance-stats strong { color: #1d568e; font-size: 1.35rem; }
+body.admin-mode .calendar-attendance-stats small { font-size: .69rem; line-height: 1.25; color: #4c617c; }
+body.admin-mode .calendar-attendance-panel label { display: grid; gap: .25rem; font-size: .8rem; }
+body.admin-mode .calendar-attendance-panel input[type="search"] { width: 100%; min-width: 0; }
+body.admin-mode .calendar-attendance-results { display: grid; gap: .3rem; max-height: 185px; overflow-y: auto; }
+body.admin-mode .calendar-attendance-results > button { display: grid; gap: .2rem; text-align: left; background: #fff; border: 1px solid #d2e0f1; border-radius: 8px; padding: .5rem; cursor: pointer; }
+body.admin-mode .calendar-attendance-results > button:hover { border-color: #3679c8; }
+body.admin-mode .calendar-attendance-results small { font-size: .7rem; color: #60728b; overflow-wrap: anywhere; }
+body.admin-mode .calendar-attendance-list { display: grid; gap: .4rem; max-height: 400px; overflow-y: auto; }
+body.admin-mode .calendar-attendance-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: .25rem .5rem; background: #fff; border: 1px solid #dce6f2; border-radius: 8px; padding: .5rem; }
+body.admin-mode .calendar-attendance-contact { grid-column: 1; min-width: 0; border: 0; background: none; color: #1f5c9d; font-weight: 700; text-align: left; cursor: pointer; padding: 0; overflow-wrap: anywhere; }
+body.admin-mode .calendar-attendance-row > small { grid-column: 1; color: #63738a; font-size: .73rem; }
+body.admin-mode .calendar-attendance-row label { grid-column: 1; }
+body.admin-mode .calendar-attendance-row select { width: 100%; min-width: 0; }
+body.admin-mode .calendar-attendance-row > button.danger { grid-column: 2; grid-row: 1 / span 2; }
+body.admin-mode .calendar-attendance-empty { font-size: .8rem; color: #64748b; }
+body.admin-mode .calendar-attendance-panel > small { color: #536781; font-size: .72rem; line-height: 1.35; }
+body.admin-mode .calendar-event > small:last-child { font-size: .65rem; }
+@media (max-width: 550px) { body.admin-mode .calendar-attendance-row { grid-template-columns: minmax(0,1fr); } body.admin-mode .calendar-attendance-row > button.danger { grid-row: auto; grid-column: 1; justify-self: start; } }
+
+body.admin-mode .calendar-attendance-choice { grid-column: 1; display: flex; flex-wrap: wrap; gap: .4rem .7rem; }
+body.admin-mode .calendar-attendance-choice label { display: inline-flex; align-items: center; gap: .3rem; padding: .25rem .4rem; border: 1px solid #dae5f2; border-radius: 6px; background: #f7f9fc; font-size: .73rem; cursor: pointer; }
+body.admin-mode .calendar-attendance-choice input { width: 17px; min-width: 17px; height: 17px; min-height: 17px; margin: 0; }

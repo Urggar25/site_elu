@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-calendar-drag-hex-delete-v1";
+const ASSET_VERSION = "20261103-calendar-participants-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -358,7 +358,7 @@ function normalizeAdminState(value) {
   const remapContactId = (id) => contactIdMap.get(id) || id;
   const permanenceRequests = normalizePermanence(value.permanenceRequests || []).map((item) => ({ ...item, contactId: remapContactId(item.contactId) }));
   const teamTasks = normalizeTasks(value.teamTasks || []).map((item) => ({ ...item, linkedContactId: remapContactId(item.linkedContactId) }));
-  const calendarEvents = normalizeCalendarEvents(value.calendarEvents || []).map((item) => ({ ...item, contactIds: [...new Set(item.contactIds.map(remapContactId))] }));
+  const calendarEvents = normalizeCalendarEvents(value.calendarEvents || []).map((item) => ({ ...item, contactIds: [...new Set(item.contactIds.map(remapContactId))], attendanceByDate: Object.fromEntries(Object.entries(item.attendanceByDate).map(([day, rows]) => [day, [...new Map(rows.map((row) => [remapContactId(row.contactId), { ...row, contactId: remapContactId(row.contactId) }])).values()]])) }));
   const deathCases = (Array.isArray(value.deathCases) ? value.deathCases : []).map((item) => ({
     ...item,
     id: item.id || crypto.randomUUID(),
@@ -634,6 +634,164 @@ function renderCalendarCategoriesManager() {
   </section>`;
 }
 
+
+function normalizeCalendarAttendance(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const [day, rows] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !Array.isArray(rows)) continue;
+    const seen = new Set();
+    out[day] = rows.filter((r) => r && typeof r.contactId === "string" && r.contactId && !seen.has(r.contactId) && seen.add(r.contactId))
+      .map((r) => ({ contactId: r.contactId, status: ["attended", "absent"].includes(r.status) ? r.status : "registered" }));
+  }
+  return out;
+}
+function calendarAttendanceDay(item) {
+  const first = String(item.startAt || "").slice(0, 10);
+  if (!item.recurrence || item.recurrence === "none") return first;
+  const selected = selectedCalendarOccurrenceKey || first;
+  return calendarEventOnDate(item, selected) ? selected : first;
+}
+function calendarAttendanceEntries(item, day = calendarAttendanceDay(item)) {
+  return (item.attendanceByDate || {})[day] || [];
+}
+function calendarAttendanceStats(item, day = calendarAttendanceDay(item)) {
+  const rows = calendarAttendanceEntries(item, day);
+  const attended = rows.filter((row) => row.status === "attended").length;
+  const absent = rows.filter((row) => row.status === "absent").length;
+  return { registered: rows.length, attended, absent, pending: rows.length - attended - absent };
+}
+function renderCalendarAttendance(item) {
+  if (!item.id) return '<section class="calendar-attendance-panel"><h4>Gestion des participants</h4><p>Enregistrez d’abord l’événement pour inscrire des participants.</p></section>';
+  const day = calendarAttendanceDay(item), entries = calendarAttendanceEntries(item, day);
+  const stat = calendarAttendanceStats(item, day);
+  return `<section class="calendar-attendance-panel" data-calendar-attendance="${attr(item.id)}" data-attendance-day="${attr(day)}">
+    <header><h4>Participants · ${text(formatDate(day))}</h4><button type="button" class="secondary-action compact" data-attendance-export>Exporter Excel (.xlsx)</button></header>
+    <div class="calendar-attendance-stats">
+      <div><strong>${stat.registered}</strong><small>Ont indiqué vouloir venir</small></div>
+      <div><strong>${stat.attended}</strong><small>Sont venus</small></div>
+      <div><strong>${stat.absent}</strong><small>Ne sont pas venus</small></div>
+      <div><strong>${stat.pending}</strong><small>À confirmer</small></div>
+    </div>
+    <p class="calendar-attendance-explainer">Ajouter une personne signifie qu’elle a indiqué vouloir participer. Vous pourrez ensuite cocher sa présence ou son absence.</p>
+    <label>Rechercher un contact à inscrire<input data-attendance-search type="search" autocomplete="off" placeholder="Nom, prénom, commune, téléphone…" /></label>
+    <div class="calendar-attendance-results" data-attendance-results><small>Saisissez au moins deux caractères.</small></div>
+    <div class="calendar-attendance-list">${entries.map((row) => {
+      const contact = contactById(row.contactId);
+      return `<div class="calendar-attendance-row">
+        <button type="button" data-calendar-open-contact="${attr(row.contactId)}" class="calendar-attendance-contact">${text(contact ? contactDisplayName(contact) : "Contact indisponible")}</button>
+        ${contact?.city ? `<small>${text(contact.city)}</small>` : ""}
+        <div class="calendar-attendance-choice" role="group" aria-label="Présence de ${attr(contact ? contactDisplayName(contact) : "ce participant")}">
+          <label><input type="checkbox" data-attendance-check="${attr(row.contactId)}" value="attended" ${row.status === "attended" ? "checked" : ""} /> Est venu</label>
+          <label><input type="checkbox" data-attendance-check="${attr(row.contactId)}" value="absent" ${row.status === "absent" ? "checked" : ""} /> N'est pas venu</label>
+        </div>
+        <button type="button" class="secondary-action compact danger" data-attendance-remove="${attr(row.contactId)}">Retirer</button>
+      </div>`;
+    }).join("") || '<p class="calendar-attendance-empty">Aucun participant enregistré.</p>'}</div>
+    ${item.recurrence && item.recurrence !== "none" ? '<small>Les inscriptions et présences sont gérées séparément pour chaque date de la série.</small>' : ""}
+  </section>`;
+}
+function calendarAttendanceAction(eventId, day, contactId, action) {
+  const item = (adminState.calendarEvents || []).find((entry) => entry.id === eventId);
+  if (!item || !calendarEventOnDate(item, day)) return;
+  const map = normalizeCalendarAttendance(item.attendanceByDate), rows = map[day] || [];
+  if (action === "add") {
+    if (!contactById(contactId) || rows.some((row) => row.contactId === contactId)) return;
+    rows.push({ contactId, status: "registered" });
+  } else if (action === "remove") {
+    map[day] = rows.filter((row) => row.contactId !== contactId);
+  } else if (["registered", "attended", "absent"].includes(action)) {
+    const entry = rows.find((row) => row.contactId === contactId);
+    if (!entry) return;
+    entry.status = action;
+  } else return;
+  if (action !== "remove") map[day] = rows;
+  item.attendanceByDate = map;
+  item.updatedAt = new Date().toISOString();
+  selectedCalendarEventId = eventId;
+  selectedCalendarOccurrenceKey = day;
+  saveAdminState("participants", "calendrier", item.title);
+}
+function searchCalendarAttendance(input) {
+  const section = input.closest("[data-calendar-attendance]"), results = section?.querySelector("[data-attendance-results]");
+  if (!section || !results) return;
+  const query = input.value.trim();
+  if (query.length < 2) { results.innerHTML = "<small>Saisissez au moins deux caractères.</small>"; return; }
+  const item = (adminState.calendarEvents || []).find((entry) => entry.id === section.dataset.calendarAttendance);
+  if (!item) return;
+  const excluded = calendarAttendanceEntries(item, section.dataset.attendanceDay).map((row) => row.contactId);
+  const matches = searchContacts(query, { limit: 12, excludeIds: excluded });
+  results.innerHTML = matches.length ? matches.map((contact) => `<button type="button" data-attendance-add="${attr(contact.id)}"><strong>${text(contactDisplayName(contact))}</strong><small>${text([contact.city, contact.mobile, contact.email].filter(Boolean).join(" · "))}</small></button>`).join("") : "<small>Aucun contact disponible.</small>";
+}
+
+
+function participantXmlText(value) {
+  return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function participantWorkbookBytes(rows) {
+  // Generates a real, uncompressed OOXML .xlsx file without a third-party script or CDN.
+  const ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+  const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const sheet = xml + `<worksheet xmlns="${ns}"><cols>${[17, 22, 24, 23, 33, 20].map((width, i) => `<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join("")}</cols><sheetData>` +
+    rows.map((row, index) => `<row r="${index + 1}">` + row.map((value, i) => `<c r="${letters[i]}${index + 1}" t="inlineStr"><is><t xml:space="preserve">${participantXmlText(value)}</t></is></c>`).join("") + "</row>").join("") + "</sheetData></worksheet>";
+  const parts = [
+    ["[Content_Types].xml", xml + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
+    ["_rels/.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ["xl/workbook.xml", xml + `<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Participants" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
+    ["xl/worksheets/sheet1.xml", sheet]
+  ];
+  const encoder = new TextEncoder();
+  const files = parts.map(([name, contents]) => ({ name: encoder.encode(name), body: encoder.encode(contents) }));
+  const crcTable = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let bit = 0; bit < 8; bit++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); crcTable[n] = c >>> 0; }
+  const crc32 = (bytes) => { let crc = 0xFFFFFFFF; for (const byte of bytes) crc = crcTable[(crc ^ byte) & 255] ^ (crc >>> 8); return (crc ^ 0xFFFFFFFF) >>> 0; };
+  const localSize = files.reduce((sum, f) => sum + 30 + f.name.length + f.body.length, 0);
+  const centralSize = files.reduce((sum, f) => sum + 46 + f.name.length, 0);
+  const bytes = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(bytes.buffer);
+  const u16 = (o, v) => view.setUint16(o, v, true);
+  const u32 = (o, v) => view.setUint32(o, v >>> 0, true);
+  let pos = 0;
+  for (const f of files) {
+    f.offset = pos;
+    f.crc = crc32(f.body);
+    u32(pos, 0x04034b50); u16(pos+4, 20); u16(pos+6, 0); u16(pos+8, 0); u32(pos+14, f.crc);
+    u32(pos+18, f.body.length); u32(pos+22, f.body.length); u16(pos+26, f.name.length); u16(pos+28, 0);
+    pos += 30; bytes.set(f.name, pos); pos += f.name.length; bytes.set(f.body, pos); pos += f.body.length;
+  }
+  const centralStart = pos;
+  for (const f of files) {
+    u32(pos, 0x02014b50); u16(pos+4, 20); u16(pos+6, 20); u16(pos+8, 0); u16(pos+10, 0);
+    u32(pos+16, f.crc); u32(pos+20, f.body.length); u32(pos+24, f.body.length);
+    u16(pos+28, f.name.length); u16(pos+30, 0); u16(pos+32, 0); u16(pos+34, 0);
+    u16(pos+36, 0); u32(pos+38, 0); u32(pos+42, f.offset);
+    pos += 46; bytes.set(f.name, pos); pos += f.name.length;
+  }
+  u32(pos, 0x06054b50); u16(pos+4, 0); u16(pos+6, 0); u16(pos+8, files.length);
+  u16(pos+10, files.length); u32(pos+12, pos-centralStart); u32(pos+16, centralStart); u16(pos+20, 0);
+  return bytes;
+}
+function exportCalendarAttendance(eventId, day) {
+  const item = (adminState.calendarEvents || []).find((entry) => entry.id === eventId);
+  if (!item || !calendarEventOnDate(item, day)) return;
+  const headers = ["Prénom", "Nom", "Commune", "Téléphone", "Mail", "Présence"];
+  const entries = calendarAttendanceEntries(item, day);
+  const rows = entries.map(({ contactId, status }) => {
+    const contact = contactById(contactId) || {};
+    return [
+      contact.firstName || "", contact.lastName || contact.usageName || "",
+      contact.city || "", contact.mobile || contact.phone || "",
+      contact.email || "", status === "attended" ? "Est venu" : status === "absent" ? "N'est pas venu" : "À confirmer"
+    ];
+  });
+  const filename = "participants-" + slugify(item.title || "evenement") + "-" + day + ".xlsx";
+  downloadFile(filename, participantWorkbookBytes([headers, ...rows]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  showToast(entries.length + " participant(s) exporté(s) vers Excel.");
+}
+
 function normalizeCalendarEvents(items) {
   const now = new Date().toISOString();
   return (Array.isArray(items) ? items : []).map((item) => {
@@ -651,6 +809,7 @@ function normalizeCalendarEvents(items) {
       location: String(item.location || "").slice(0, 240),
       contactIds: [...new Set((Array.isArray(item.contactIds) ? item.contactIds : item.contactId ? [item.contactId] : []).filter((id) => typeof id === "string" && id.trim()).map(String))],
       assignedUserIds: [...new Set((Array.isArray(item.assignedUserIds) ? item.assignedUserIds : item.assignedTo ? [item.assignedTo] : []).filter((id) => typeof id === "string" && id.trim()).map(String))],
+      attendanceByDate: normalizeCalendarAttendance(item.attendanceByDate),
       body: String(item.body || item.description || "").slice(0, 12000),
       createdBy: String(item.createdBy || ""),
       createdByName: String(item.createdByName || ""),
@@ -3277,7 +3436,7 @@ function calendarCopyEvent(sourceId, occurrenceKey, target) {
   const copy = {
     ...source, id: crypto.randomUUID(), startAt: toLocalDateTimeValue(next),
     endAt: toLocalDateTimeValue(new Date(next.getTime() + duration)),
-    recurrence: "none", recurrenceUntil: "", createdBy: currentUserId,
+    recurrence: "none", recurrenceUntil: "", attendanceByDate: {}, createdBy: currentUserId,
     createdByName: userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: now, updatedAt: now
   };
@@ -3322,6 +3481,7 @@ function renderCalendarTimedEvent(item) {
     ${calendarAssignedToMe(item) ? `<span class="calendar-my-assignment" title="Cet événement vous est attribué">★ À moi</span>` : item.assignedUserIds?.length ? `<small class="calendar-assigned-count" title="${attr(calendarAssignmentText(item))}">👥 ${item.assignedUserIds.length}</small>` : ""}
     ${item.recurrence && item.recurrence !== "none" ? `<small>↻ ${text(calendarRecurrenceLabel(item.recurrence))}</small>` : ""}
     <small>Ajouté par ${text(calendarEventCreator(item))}</small>
+    ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? `<small>🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered} inscrit(s)</small>` : ""}
     ${(item.contactIds || []).length ? `<small class="calendar-contact-count">👤 ${(item.contactIds || []).length} contact(s)</small>` : ""}
   </button>`;
 }
@@ -3357,7 +3517,7 @@ function renderCalendarMonth(days) {
       const events = calendarEventsForDate(day);
       return `<article class="calendar-month-day ${day.getMonth() !== cursorMonth ? "is-outside" : ""} ${key === today ? "is-today" : ""}">
         <button class="calendar-month-number" type="button" data-calendar-slot="${key}T09:00">${day.getDate()}</button>
-        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
+        <div>${events.slice(0, 3).map((item) => `<button class="calendar-month-event tone-${attr(item.color)} ${calendarCategory(item) ? "is-categorized" : ""}" style="${calendarCategoryStyle(item)}" type="button" data-calendar-event="${attr(item.id)}" data-calendar-occurrence="${attr(item.occurrenceKey || String(item.startAt).slice(0, 10))}" title="${attr([`${calendarTimeLabel(item.startAt)} – ${calendarTimeLabel(item.endAt)}`, calendarEventContactTooltip(item)].filter(Boolean).join(" · "))}">${calendarAssignedToMe(item) ? "★ " : ""}${item.recurrence && item.recurrence !== "none" ? "↻ " : ""}${text(item.title)}${!calendarAssignedToMe(item) && item.assignedUserIds?.length ? ` · 👥 ${item.assignedUserIds.length}` : ""}${item.contactIds?.length ? ` · 👤 ${item.contactIds.length}` : ""}${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered ? ` · 🎟 ${calendarAttendanceStats(item, String(item.startAt).slice(0, 10)).registered}` : ""}</button>`).join("")}${events.length > 3 ? `<small>+ ${events.length - 3} autre(s)</small>` : ""}</div>
       </article>`;
     }).join("")}
   </section>`;
@@ -3437,6 +3597,7 @@ function renderCalendarEditor(item) {
   const isNew = !item.id;
   return `<aside class="calendar-editor" aria-label="${isNew ? "Nouvel événement" : "Modifier l’événement"}">
     <header><div><h3>${isNew ? "Nouvel événement" : "Modifier l’événement"}</h3><p>${isNew ? "Choisissez librement la plage horaire." : "Cliquez sur un événement pour consulter ses contacts et ses détails."}</p></div><button type="button" data-calendar-close aria-label="Fermer">${localIcon("x")}</button></header>
+    ${renderCalendarAttendance(item)}
     <form data-calendar-save="${attr(item.id || "new")}">
       ${calendarLinkedContactIds(item).length ? `<p class="calendar-contact-summary">${calendarLinkedContactIds(item).length} contact(s) associé(s) — téléphone et email affichés ci-dessous.</p>` : ""}
       <fieldset class="calendar-contact-fieldset"><legend>Contacts associés</legend><p class="calendar-contact-help">Liez plusieurs contacts à cet événement. Cliquez sur un nom pour ouvrir sa fiche.</p>
@@ -3516,6 +3677,7 @@ function saveCalendarEvent(form) {
     recurrenceUntil: ["weekly", "monthly", "yearly"].includes(data.get("recurrence")) ? String(data.get("recurrenceUntil") || "") : "",
     contactIds: [...new Set(data.getAll("contactIds").map(String).filter((id) => contactById(id)))],
     assignedUserIds: [...new Set(data.getAll("assignedUserIds").map(String).filter(Boolean))].filter((id) => calendarTeamMembers().some((member) => member.id === id) || (previous?.assignedUserIds || []).includes(id)),
+    attendanceByDate: previous?.attendanceByDate || {},
     createdBy: previous?.createdBy || currentUserId,
     createdByName: previous?.createdByName || userNameById(currentUserId) || currentUser()?.login || "Compte de l'équipe",
     createdAt: previous?.createdAt || now,
@@ -5723,7 +5885,7 @@ function updateContactReferences(previousId, nextId) {
   if (!previousId || !nextId || previousId === nextId) return;
   adminState.permanenceRequests.forEach((item) => { if (item.contactId === previousId) item.contactId = nextId; });
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
-  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); });
+  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); for (const rows of Object.values(item.attendanceByDate || {})) rows.forEach((row) => { if (row.contactId === previousId) row.contactId = nextId; }); });
   adminState.deathCases.forEach((item) => {
     if (item.deceasedId === previousId) item.deceasedId = nextId;
     (item.relatives || []).forEach((relative) => { if (relative.contactId === previousId) relative.contactId = nextId; });
@@ -5734,7 +5896,7 @@ function clearDeletedContactReferences(ids) {
   const deleted = new Set(ids);
   adminState.permanenceRequests.forEach((item) => { if (deleted.has(item.contactId)) item.contactId = ""; });
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
-  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); });
+  adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); for (const [day, rows] of Object.entries(item.attendanceByDate || {})) item.attendanceByDate[day] = rows.filter((row) => !deleted.has(row.contactId)); });
   adminState.deathCases.forEach((item) => {
     if (deleted.has(item.deceasedId)) item.deceasedId = "";
     item.relatives = (item.relatives || []).filter((relative) => !deleted.has(relative.contactId));
@@ -7753,6 +7915,24 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
+  const attendeeAdd = event.target.closest("[data-attendance-add]");
+  if (attendeeAdd) {
+    const panel = attendeeAdd.closest("[data-calendar-attendance]");
+    if (panel) calendarAttendanceAction(panel.dataset.calendarAttendance, panel.dataset.attendanceDay, attendeeAdd.dataset.attendanceAdd, "add");
+    return;
+  }
+  const attendeeRemove = event.target.closest("[data-attendance-remove]");
+  if (attendeeRemove) {
+    const panel = attendeeRemove.closest("[data-calendar-attendance]");
+    if (panel && confirm("Retirer ce participant de l'événement ?")) calendarAttendanceAction(panel.dataset.calendarAttendance, panel.dataset.attendanceDay, attendeeRemove.dataset.attendanceRemove, "remove");
+    return;
+  }
+  const attendeeExport = event.target.closest("[data-attendance-export]");
+  if (attendeeExport) {
+    const panel = attendeeExport.closest("[data-calendar-attendance]");
+    if (panel) exportCalendarAttendance(panel.dataset.calendarAttendance, panel.dataset.attendanceDay);
+    return;
+  }
   const calendarAddContact = event.target.closest("[data-calendar-add-contact]");
   if (calendarAddContact) {
     const form = calendarAddContact.closest("[data-calendar-save]");
@@ -8591,6 +8771,7 @@ document.addEventListener("dblclick", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-attendance-search]")) { searchCalendarAttendance(event.target); return; }
   if (event.target.matches("[data-calendar-color-hex]")) {
     const field = event.target;
     const raw = field.value.trim().toUpperCase();
@@ -8640,6 +8821,12 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.matches("[data-attendance-check]")) {
+    const panel = event.target.closest("[data-calendar-attendance]");
+    const status = event.target.checked ? event.target.value : "registered";
+    if (panel) calendarAttendanceAction(panel.dataset.calendarAttendance, panel.dataset.attendanceDay, event.target.dataset.attendanceCheck, status);
+    return;
+  }
   if (event.target.matches("[data-calendar-recurrence]")) {
     const label = event.target.closest("form")?.querySelector(".calendar-recurrence-until");
     if (label) label.hidden = event.target.value === "none";
