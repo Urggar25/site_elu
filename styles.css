@@ -11293,3 +11293,13 @@ body.admin-mode .trombinoscope-linked-contact button { border: 0; background: no
 .contact-linked-calendar button { text-align: left; white-space: normal; overflow-wrap: anywhere; }
 .calendar-contact-count { display: inline-flex; align-items: center; gap: .15rem; font-size: .72rem; font-weight: 600; }
 @media (max-width: 600px) { .calendar-contact-chip { width: 100%; } .calendar-contact-open { flex: 1; } }
+
+/* Agenda compact : les heures sont portées par la grille et l'infobulle, pas dans les cases. */
+.calendar-contact-chip { align-items: stretch; }
+.calendar-contact-info { min-width: 0; display: grid; align-content: center; flex: 1; padding: .2rem 0; }
+.calendar-contact-open { font-weight: 650; padding-bottom: .15rem; }
+.calendar-contact-channels { display: flex; flex-wrap: wrap; gap: .25rem .7rem; padding: 0 .55rem .4rem; min-width: 0; }
+.calendar-contact-channel { color: #205d97; font-size: .82rem; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 2px; }
+.calendar-contact-channel:hover, .calendar-contact-channel:focus-visible { color: #123e70; }
+.calendar-contact-unlink { align-self: stretch; }
+@media (max-width: 600px) { .calendar-contact-channels { flex-direction: column; align-items: flex-start; } }
