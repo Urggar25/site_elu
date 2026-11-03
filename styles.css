@@ -11498,3 +11498,28 @@ body.admin-mode .adjoint-alert { background: #fff8e7; padding: 14px 18px; border
 body.admin-mode .adjoint-alert ul { max-height: 240px; overflow-y: auto; padding-left: 22px; }
 body.admin-mode .adjoint-feedback { padding: 12px; background: #eff7f1; border: 1px solid #a9cfb3; border-radius: 7px; }
 body.admin-mode .adjoint-preview > button { margin: 9px 10px 0 0; }
+
+/* Mairies institutionnelles : styles isolés des écrans existants. */
+body.admin-mode .institutions-page { display: grid; gap: 16px; padding: 20px; max-width: 1350px; }
+body.admin-mode .institutions-page .admin-panel { padding: 22px; border: 1px solid #dae4f0; border-radius: 12px; background: #fff; }
+body.admin-mode .institutions-page h2 { margin: 0 0 12px; color: #193656; font-size: 1.55rem; }
+body.admin-mode .institutions-page h3 { margin: 0 0 10px; }
+body.admin-mode .institutions-page p { line-height: 1.55; }
+body.admin-mode .institution-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; margin: 18px 0; }
+body.admin-mode .institution-stats > div { display: grid; gap: 5px; background: #f5f8fc; padding: 15px; border-radius: 8px; }
+body.admin-mode .institution-stats strong { font-size: 1.6rem; color: #173c74; }
+body.admin-mode .institution-stats span { font-size: .8rem; color: #556579; }
+body.admin-mode .institution-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+body.admin-mode .institution-candidates { display: grid; gap: 8px; max-height: 56vh; overflow: auto; margin: 18px 0; }
+body.admin-mode .institution-candidate { display: flex; gap: 12px; padding: 12px; background: #f9fbfe; border: 1px solid #e0e8f2; border-radius: 8px; align-items: start; cursor: pointer; }
+body.admin-mode .institution-candidate input { margin-top: 5px; flex-shrink: 0; width: 17px; height: 17px; }
+body.admin-mode .institution-candidate span { display: grid; gap: 5px; }
+body.admin-mode .institution-candidate small { font-size: .83rem; color: #53667e; }
+body.admin-mode .institution-candidate em { font-size: .8rem; color: #9e6316; font-style: normal; }
+body.admin-mode .institutions-layout { display: grid; grid-template-columns: minmax(220px, 340px) minmax(0, 1fr); align-items: start; gap: 16px; }
+body.admin-mode .institutions-list { display: grid; gap: 7px; max-height: 75vh; overflow: auto; }
+body.admin-mode .institutions-list button { text-align: left; padding: 10px 12px; border: 1px solid #dbe4f0; background: #fff; border-radius: 7px; color: #183c65; cursor: pointer; }
+body.admin-mode .institutions-list button.active { border-color: #3165a3; background: #eaf2ff; font-weight: 700; }
+body.admin-mode .institutions-page input[type="search"],body.admin-mode .institutions-page select { max-width: 100%; margin: 10px 0; padding: 10px; border: 1px solid #cfdae9; border-radius: 7px; }
+body.admin-mode .contact-institution-link { padding: 12px; background: #ecf4ff; border-radius: 8px; margin: 12px 0; }
+@media(max-width: 850px) { body.admin-mode .institutions-layout { grid-template-columns: 1fr; } }
