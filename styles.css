@@ -11337,3 +11337,19 @@ body.admin-mode .calendar-toolbar .calendar-manage-categories { justify-self: en
 .calendar-recurrence-until[hidden] { display: none !important; }
 .calendar-series-note { padding: .6rem; border-radius: 8px; color: #435875 !important; background: #f0f6ff; font-size: .85rem !important; }
 @media (max-width: 850px) { body.admin-mode .calendar-toolbar .calendar-manage-categories { justify-self: start; } }
+
+/* Attribution des événements et copie à la souris */
+body.admin-mode .calendar-event .calendar-my-assignment { display: inline-block; width: fit-content; border-radius: 5px; padding: 2px 5px; font-size: .68rem; font-weight: 850; color: #643b04; background: #fff1bd; }
+body.admin-mode .calendar-month-event { overflow: hidden; }
+.calendar-copy-hint { grid-column: 1 / -1; font-size: .76rem; color: #53657b; margin: .1rem 0; }
+body.admin-mode .calendar-assignees { display: grid; gap: .6rem; border: 1px solid #cddbec; padding: .8rem; border-radius: 9px; min-width: 0; }
+body.admin-mode .calendar-assignees legend { font-weight: 700; padding: 0 .35rem; }
+body.admin-mode .calendar-assignees p { margin: 0; font-size: .8rem; }
+body.admin-mode .calendar-assignees-list { max-height: 185px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fit,minmax(130px,1fr)); gap: .35rem; }
+body.admin-mode .calendar-assignees-list label.calendar-assignee-option { display: flex; flex-direction: row; align-items: center; gap: .45rem; padding: .35rem; background: #f6f9fd; border-radius: 6px; min-width: 0; }
+body.admin-mode .calendar-assignee-option input[type=checkbox] { flex: 0 0 auto; width: 18px; min-width: 18px; min-height: 18px; margin: 0; }
+body.admin-mode .calendar-assignee-option span { overflow-wrap: anywhere; }
+body.admin-mode .calendar-day-column.calendar-drop-target { outline: 3px solid #2d7de0; outline-offset: -3px; background-color: #eaf3ff; }
+body.admin-mode .calendar-event.calendar-drag-source { opacity: .5; outline: 2px dashed #2d7de0; }
+#calendar-copy-drag-label { position: fixed; pointer-events: none; z-index: 99999; border-radius: 7px; padding: .4rem .6rem; color: white; background: #215cb1; box-shadow: 0 4px 14px #123c7a44; font-weight: 700; font-size: .8rem; white-space: nowrap; }
+@media (max-width: 850px) { .calendar-copy-hint { font-size: .72rem; } }
