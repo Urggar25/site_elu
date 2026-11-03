@@ -3420,22 +3420,73 @@ function savedContactSearchLabel(item) {
 
 function savedSearchContacts(item, searches = normalizeSavedContactSearches(adminState.savedContactSearches), visited = new Set()) {
   if (!item || visited.has(item.id)) return [];
+  const topLevel = visited.size === 0;
+  if (topLevel && savedSearchResultCache.has(item.id)) return savedSearchResultCache.get(item.id);
   const next = new Set(visited);
   next.add(item.id);
+  let results;
   if (item.sourceIds?.length) {
     const byId = new Map(searches.map((entry) => [entry.id, entry]));
     const found = new Map();
     for (const id of item.sourceIds) {
       for (const contact of savedSearchContacts(byId.get(id), searches, next)) found.set(contact.id, contact);
     }
-    return [...found.values()];
+    results = [...found.values()];
+  } else {
+    const filters = item.filters || {};
+    results = filteredContacts({
+      q: filters.q || "",
+      fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
+      keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
+    });
   }
-  const filters = item.filters || {};
-  return filteredContacts({
-    q: filters.q || "",
-    fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-    keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
-  });
+  if (topLevel) savedSearchResultCache.set(item.id, results);
+  return results;
+}
+function savedSearchStatistics(item, searches) {
+  if (savedSearchStatisticsCache.has(item.id)) return savedSearchStatisticsCache.get(item.id);
+  const contacts = savedSearchContacts(item, searches);
+  const summary = savedSearchExportPreview(contacts);
+  const byId = new Map(searches.map((entry) => [entry.id, entry]));
+  const sources = (item.sourceIds || []).map((id) => byId.get(id)).filter(Boolean);
+  const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
+  const value = { contacts: contacts.length, addresses: summary.rows.length, overlaps: overlapCount,
+    people: summary.personDuplicates, addressDuplicates: summary.addressDuplicates,
+    avoided: summary.totalAvoided + overlapCount };
+  savedSearchStatisticsCache.set(item.id, value);
+  return value;
+}
+function hydrateSavedSearchStatistics() {
+  const root = document.querySelector(".saved-contact-searches");
+  if (!root || !root.querySelector("[data-saved-search-stats]")) return;
+  const generation = ++savedSearchStatsRun;
+  const stateAtStart = adminState;
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const byId = new Map(searches.map((item) => [item.id, item]));
+  const pending = [...root.querySelectorAll("[data-saved-search-stats]")];
+  let cursor = 0;
+  const tick = () => {
+    if (generation !== savedSearchStatsRun || adminState !== stateAtStart || !root.isConnected) return;
+    // One heavy calculation per idle task; keeps the main UI navigable.
+    while (cursor < pending.length) {
+      const element = pending[cursor++];
+      if (!element.isConnected) continue;
+      const item = byId.get(element.dataset.savedSearchStats);
+      if (!item) continue;
+      const stats = savedSearchStatistics(item, searches);
+      element.textContent = savedContactSearchLabel(item) + " · " + stats.contacts +
+        " contacts · " + stats.addresses + " adresses · " + stats.avoided +
+        " doublon(s) évité(s) (" + stats.overlaps + " entre recherches, " +
+        stats.people + " personnes, " + stats.addressDuplicates + " adresses)";
+      break;
+    }
+    if (cursor < pending.length) {
+      if (typeof requestIdleCallback === "function") requestIdleCallback(tick, { timeout: 1000 });
+      else setTimeout(tick, 50);
+    }
+  };
+  if (typeof requestIdleCallback === "function") requestIdleCallback(tick, { timeout: 1000 });
+  else setTimeout(tick, 50);
 }
 
 function savedSearchExportPreview(contacts) {
