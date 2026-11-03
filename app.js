@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-agenda-pdf-search-popover-v1";
+const ASSET_VERSION = "20261103-contact-fast-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -147,6 +147,13 @@ let adminUsersLoadAttempted = false;
 let contactByIdCache = null;
 let contactSearchTextCache = new WeakMap();
 let contactQuickSearchTextCache = new WeakMap();
+let contactsFilterResultCache = new Map();
+let savedSearchResultCache = new Map();
+let savedSearchStatisticsCache = new Map();
+let contactKeywordChoicesCache = null;
+let savedSearchesNormalizationCache = { source: null, value: [] };
+let savedSearchVisibleCount = 30;
+let savedSearchStatsRun = 0;
 let adminMutationSnapshot = null;
 let publicStateVersion = "";
 let adminStateVersion = "";
@@ -1776,6 +1783,12 @@ function resetContactLookupCaches() {
   contactByIdCache = null;
   contactSearchTextCache = new WeakMap();
   contactQuickSearchTextCache = new WeakMap();
+  contactsFilterResultCache.clear();
+  savedSearchResultCache.clear();
+  savedSearchStatisticsCache.clear();
+  contactKeywordChoicesCache = null;
+  savedSearchesNormalizationCache = { source: null, value: [] };
+  savedSearchStatsRun++;
 }
 
 function contactById(id = "") {
@@ -3307,6 +3320,8 @@ function normalizedContactKeywordIds(values) {
   return [...new Set(items.map((value) => slugify(value)).filter((value) => value !== "item"))].slice(0, 100);
 }
 function contactKeywordChoices() {
+  if (contactKeywordChoicesCache?.contacts === adminState.localContacts &&
+      contactKeywordChoicesCache?.keywords === adminState.contactKeywords) return contactKeywordChoicesCache.value;
   const choices = new Map();
   normalizeKeywords(adminState.contactKeywords || []).forEach((word) => choices.set(slugify(word.id), { id: slugify(word.id), label: word.label, color: word.color }));
   (adminState.localContacts || []).forEach((contact) => {
@@ -3317,7 +3332,9 @@ function contactKeywordChoices() {
       if (label && id !== "item" && !choices.has(id)) choices.set(id, { id, label, color: "#708199" });
     });
   });
-  return [...choices.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
+  const result = [...choices.values()].sort((a, b) => a.label.localeCompare(b.label, "fr"));
+  contactKeywordChoicesCache = { contacts: adminState.localContacts, keywords: adminState.contactKeywords, value: result };
+  return result;
 }
 function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR") {
   const wanted = normalizedContactKeywordIds(keywordIds);
@@ -3361,8 +3378,9 @@ function contactSearchFilters() {
 
 function normalizeSavedContactSearches(items) {
   if (!Array.isArray(items)) return [];
+  if (savedSearchesNormalizationCache.source === items) return savedSearchesNormalizationCache.value;
   const ids = new Set();
-  return items.filter((item) => {
+  const result = items.filter((item) => {
     if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id || ids.has(item.id)) return false;
     ids.add(item.id);
     return true;
@@ -3375,6 +3393,8 @@ function normalizeSavedContactSearches(items) {
     createdBy: String(item.createdBy || ""),
     sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : []
   })).slice(0, 200);
+  savedSearchesNormalizationCache = { source: items, value: result };
+  return result;
 }
 
 function savedContactSearchFilters(form) {
@@ -3627,8 +3647,17 @@ function filteredContacts(filters = contactSearchFilters()) {
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
     if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
   }
+  const cacheKey = JSON.stringify({
+    q: filters.q || "", fields: filters.fields || {},
+    keywordIds: normalizedContactKeywordIds(filters.keywordIds),
+    keywordMode: filters.keywordMode === "AND" ? "AND" : "OR"
+  });
+  if (contactsFilterResultCache.has(cacheKey)) return contactsFilterResultCache.get(cacheKey);
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  return adminState.localContacts.filter((contact) => contactMatchesFilters(contact, filters, fieldsById));
+  const matching = (adminState.localContacts || []).filter((contact) => contactMatchesFilters(contact, filters, fieldsById));
+  if (contactsFilterResultCache.size >= 80) contactsFilterResultCache.delete(contactsFilterResultCache.keys().next().value);
+  contactsFilterResultCache.set(cacheKey, matching);
+  return matching;
 }
 
 function isAllFilteredContactSelectionActive(filters = contactSearchFilters()) {
