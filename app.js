@@ -4491,7 +4491,7 @@ function renderContacts() {
     ${contactDeletionProgress ? renderContactDeletionProgress() : ""}
     <section class="contact-search-panel">
       <header class="contact-search-head">
-        <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.length} fiche(s)</p></div>
+        <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.filter((item) => item.entityType !== "institution").length} personne(s)</p></div>
         <button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button>
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
