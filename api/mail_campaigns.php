@@ -207,6 +207,13 @@ if ($action === 'preview' || $action === 'prepare') {
     if (!mailer_configured()) json_response(['ok' => false, 'error' => 'Configurer BREVO_API_KEY et CAMPAIGN_FROM_EMAIL côté serveur.'], 400);
     if (($data['consentConfirmed'] ?? false) !== true) json_response(['ok' => false, 'error' => 'Confirmez les droits de contact des destinataires.'], 400);
     if (!$recipients || count($recipients) > 250) json_response(['ok' => false, 'error' => 'La campagne doit contenir entre 1 et 250 destinataires admissibles.'], 400);
+    // Limiter les envois quotidiens pour éviter une émission massive par erreur.
+    $daily = mailer_db();
+    $countStmt = $daily->prepare('SELECT COUNT(*) FROM mail_campaign_recipients r JOIN mail_campaigns c ON c.id=r.campaign_id WHERE c.created_by=? AND c.created_at >= CURDATE()');
+    $countStmt->execute([$user['id']]);
+    if ((int)$countStmt->fetchColumn() + count($recipients) > 1000) {
+        json_response(['ok' => false, 'error' => 'Limite de 1 000 destinataires préparés par jour et par compte atteinte.'], 429);
+    }
     $id = bin2hex(random_bytes(16));
     $pdo = mailer_db();
     $pdo->beginTransaction();
