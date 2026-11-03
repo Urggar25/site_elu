@@ -11303,3 +11303,13 @@ body.admin-mode .trombinoscope-linked-contact button { border: 0; background: no
 .calendar-contact-channel:hover, .calendar-contact-channel:focus-visible { color: #123e70; }
 .calendar-contact-unlink { align-self: stretch; }
 @media (max-width: 600px) { .calendar-contact-channels { flex-direction: column; align-items: flex-start; } }
+
+/* Ne pas afficher les heures dans les cases, même dans un rendu antérieur. */
+body.admin-mode .calendar-event > time,
+body.admin-mode .calendar-month-event > time { display: none !important; }
+body.admin-mode .calendar-event { cursor: pointer; }
+body.admin-mode .calendar-event strong { display: block; }
+.calendar-contact-summary { margin: 0 !important; padding: .55rem .7rem; border-radius: 8px; background: #eff6ff; color: #204b77 !important; font-size: .86rem !important; }
+body.admin-mode .calendar-contact-fieldset { margin: 0; }
+body.admin-mode .calendar-contact-info { min-width: 0; }
+body.admin-mode .calendar-contact-channels a { display: inline-block; }
