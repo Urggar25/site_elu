@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261008-stable-saves-v3";
+const ASSET_VERSION = "20261103-saved-contact-searches-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -223,6 +223,7 @@ function defaultAdminState() {
   return {
     contactFields: defaultContactFields(),
     localContacts: [],
+    savedContactSearches: [],
     trombinoscopeCategories: [],
     trombinoscopePeople: [],
     contactKeywords: [
@@ -400,6 +401,7 @@ function normalizeAdminState(value) {
     ...value,
     contactFields: normalizeContactFields(value.contactFields || []),
     localContacts: contacts,
+    savedContactSearches: normalizeSavedContactSearches(value.savedContactSearches),
     trombinoscopeCategories,
     trombinoscopePeople,
     contactKeywords: normalizeKeywords(value.contactKeywords || []),
@@ -992,6 +994,7 @@ function adminStateForApi(stateValue, target = "") {
 function adminChangeKeysForTarget(target = "") {
   const normalized = normalizeName(target);
   if (["administration", "sync", "synchronisation"].includes(normalized)) return null;
+  if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
   if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
@@ -2665,6 +2668,102 @@ function contactSearchFilters() {
   return { q: String(filters.q || ""), page, perPage, fields };
 }
 
+
+function normalizeSavedContactSearches(items) {
+  if (!Array.isArray(items)) return [];
+  const ids = new Set();
+  return items.filter((item) => {
+    if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id || ids.has(item.id)) return false;
+    ids.add(item.id);
+    return true;
+  }).map((item) => ({
+    id: item.id,
+    name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
+    filters: Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (key === "q" || key === "perPage" || (key.startsWith("field_") && key.length < 100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])),
+    createdAt: String(item.createdAt || ""),
+    updatedAt: String(item.updatedAt || ""),
+    createdBy: String(item.createdBy || "")
+  })).slice(0, 200);
+}
+
+function savedContactSearchFilters(form) {
+  const values = Object.fromEntries(new FormData(form).entries());
+  const allowed = new Set(contactFields().map((field) => contactFilterKey(field)));
+  const filters = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (allowed.has(key) && String(value).trim()) filters[key] = String(value).trim();
+  }
+  if (String(values.q || "").trim()) filters.q = String(values.q).trim();
+  filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
+  return filters;
+}
+
+function savedContactSearchLabel(item) {
+  const filters = item.filters || {};
+  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length;
+  return n + " critère" + (n > 1 ? "s" : "");
+}
+
+function renderSavedContactSearches() {
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const current = adminFilters.activeSavedContactSearchId || "";
+  return `<section class="saved-contact-searches" aria-label="Recherches de contacts enregistrées">
+    <div class="saved-contact-searches-heading">
+      <div><h3>Recherches enregistrées</h3><p>Conservez vos critères pour retrouver une liste de contacts toujours à jour.</p></div>
+      <button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>
+    </div>
+    ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
+      <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Recharger la recherche">
+        <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))} · ${filteredContacts({ q: item.filters.q || "", fields: Object.fromEntries(Object.entries(item.filters).filter(([k]) => k.startsWith("field_")).map(([k,v]) => [k.slice(6),v])) }).length} contact(s) actuellement</small>
+      </button>
+      <button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés par ceux du formulaire">Actualiser</button>
+      <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}" title="Supprimer cette recherche">Supprimer</button>
+    </div>`).join("")}</div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+  </section>`;
+}
+
+function saveContactSearch(form, existingId = "") {
+  const current = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const existing = current.find((item) => item.id === existingId);
+  if (existingId && !existing) return;
+  const proposedName = existing ? existing.name : "";
+  const name = existing ? existing.name : prompt("Nom de cette recherche :", proposedName);
+  if (name === null) return;
+  const cleanName = String(name).trim().slice(0, 120);
+  if (!cleanName) { showToast("Saisissez un nom pour cette recherche."); return; }
+  const now = new Date().toISOString();
+  const item = {
+    id: existing?.id || crypto.randomUUID(),
+    name: cleanName,
+    filters: savedContactSearchFilters(form),
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    createdBy: existing?.createdBy || currentUserId
+  };
+  adminState.savedContactSearches = existing ? current.map((entry) => entry.id === existing.id ? item : entry) : [item, ...current];
+  adminFilters.activeSavedContactSearchId = item.id;
+  saveAdminState(existing ? "modification" : "creation", "recherche contact enregistree", item.name);
+  showToast(existing ? "Critères enregistrés mis à jour." : "Recherche enregistrée.");
+}
+
+function loadContactSearch(id) {
+  const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
+  if (!item) return;
+  // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
+  clearContactSelection();
+  adminFilters.contacts = { ...item.filters, page: 1 };
+  adminFilters.activeSavedContactSearchId = item.id;
+  renderAdmin();
+}
+
+function deleteContactSearch(id) {
+  const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
+  if (!item || !confirm(`Supprimer la recherche « ${item.name} » ? Les contacts ne seront pas supprimés.`)) return;
+  adminState.savedContactSearches = adminState.savedContactSearches.filter((entry) => entry.id !== id);
+  if (adminFilters.activeSavedContactSearchId === id) adminFilters.activeSavedContactSearchId = "";
+  saveAdminState("suppression", "recherche contact enregistree", item.name);
+}
+
 function contactFiltersSignature(filters = contactSearchFilters()) {
   return JSON.stringify({ q: filters.q || "", fields: filters.fields || {} });
 }
@@ -3247,6 +3346,7 @@ function renderContacts() {
         ${renderContactDynamicFilters(filters)}
         ${renderContactPagination({ ...filters, page }, contacts.length)}
       </form>
+      ${renderSavedContactSearches()}
     </section>
     <div class="admin-split contact-split">
       <section class="admin-list contact-result-list">
@@ -7478,8 +7578,26 @@ document.addEventListener("click", async (event) => {
     renderAdmin();
   }
 
+  const contactSaveSearch = event.target.closest("[data-contact-save-search]");
+  if (contactSaveSearch) {
+    const form = document.querySelector('[data-admin-filter="contacts"]');
+    if (form) saveContactSearch(form);
+    return;
+  }
+  const contactLoadSearch = event.target.closest("[data-contact-load-search]");
+  if (contactLoadSearch) { loadContactSearch(contactLoadSearch.dataset.contactLoadSearch); return; }
+  const contactUpdateSearch = event.target.closest("[data-contact-update-search]");
+  if (contactUpdateSearch) {
+    const form = document.querySelector('[data-admin-filter="contacts"]');
+    if (form) saveContactSearch(form, contactUpdateSearch.dataset.contactUpdateSearch);
+    return;
+  }
+  const contactDeleteSearch = event.target.closest("[data-contact-delete-search]");
+  if (contactDeleteSearch) { deleteContactSearch(contactDeleteSearch.dataset.contactDeleteSearch); return; }
+
   if (event.target.closest("[data-contact-reset-filters]")) {
     adminFilters.contacts = { perPage: contactSearchFilters().perPage, page: 1 };
+    adminFilters.activeSavedContactSearchId = "";
     clearContactSelection();
     renderAdmin();
     return;
@@ -7763,6 +7881,7 @@ document.addEventListener("submit", async (event) => {
     event.preventDefault();
     const key = filter.dataset.adminFilter;
     adminFilters[key] = Object.fromEntries(new FormData(filter, event.submitter).entries());
+    if (key === "contacts") { adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }

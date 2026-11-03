@@ -155,6 +155,7 @@ function admin_partial_update_paths(): array
         'teamTasks',
         'calendarEvents',
         'contactFields',
+        'savedContactSearches',
         'deletedContactFields',
         'contactKeywords',
         'trombinoscopeCategories',
