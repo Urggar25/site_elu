@@ -23,6 +23,7 @@ const adminMenu = {
       label: "Permanence",
       items: [
         ["contacts", "Contacts", "search"],
+        ["institutions", "Institutions", "users"],
         ["saved-contact-searches", "Recherche sauvegardée", "search"],
         ["trombinoscope", "Trombinoscope", "users"],
         ["calendar", "Calendrier", "calendar"],
@@ -60,6 +61,7 @@ const adminMenu = {
         ["contact-fields", "Champs contact", "settings"],
         ["keywords", "Mots cles", "settings"],
         ["adjoint", "Adjoint (temporaire)", "users"],
+        ["institution-migration", "Réorganiser les mairies", "settings"],
         ["templates", "Modele de courriers", "doc"],
         ["social", "Reseaux", "settings"],
         ["mobile-menu", "Menu mobile", "settings"],
@@ -232,6 +234,7 @@ function defaultAdminState() {
   return {
     contactFields: defaultContactFields(),
     localContacts: [],
+    institutions: [],
     savedContactSearches: [],
     mailTemplates: [],
     trombinoscopeCategories: [],
@@ -413,6 +416,12 @@ function normalizeAdminState(value) {
     ...value,
     contactFields: normalizeContactFields(value.contactFields || []),
     localContacts: contacts,
+    institutions: (Array.isArray(value.institutions) ? value.institutions : []).filter((entry) => entry && entry.id && entry.name).map((entry) => ({
+      ...entry,
+      mayorContactId: remapContactId(entry.mayorContactId || ""),
+      legacyContactId: remapContactId(entry.legacyContactId || ""),
+      deputyContactIds: [...new Set((Array.isArray(entry.deputyContactIds) ? entry.deputyContactIds : []).map(remapContactId))]
+    })),
     savedContactSearches: normalizeSavedContactSearches(value.savedContactSearches),
     mailTemplates: normalizeMailTemplates(value.mailTemplates),
     trombinoscopeCategories,
@@ -1479,6 +1488,8 @@ function adminChangeKeysForTarget(target = "") {
   if (["administration", "sync", "synchronisation"].includes(normalized)) return null;
   if (normalized.includes("evenement majeur campagne")) return ["campaignEvents", "calendarEvents"];
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
+  if (normalized.includes("migration institution")) return ["localContacts", "institutions"];
+  if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
   if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
@@ -2480,6 +2491,8 @@ function renderAdminView() {
   if (activeAdminSection === "mail-templates") return renderMailTemplates();
   if (activeAdminSection === "mail-campaigns") return renderMailCampaigns();
   if (activeAdminSection === "contacts") return renderContacts();
+  if (activeAdminSection === "institutions") return window.InstitutionManager?.renderDirectory() || '<section class="admin-panel">Module Institutions indisponible. Actualisez la page.</section>';
+  if (activeAdminSection === "institution-migration") return window.InstitutionManager?.renderMigration() || '<section class="admin-panel">Module de migration indisponible. Actualisez la page.</section>';
   if (activeAdminSection === "saved-contact-searches") return renderSavedContactSearchesPage();
   if (activeAdminSection === "calendar") return renderCalendar();
   if (activeAdminSection === "contact-io") return renderContactImportExport();
@@ -3665,7 +3678,7 @@ function filteredContacts(filters = contactSearchFilters()) {
     if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  return adminState.localContacts.filter((contact) => contactMatchesFilters(contact, filters, fieldsById));
+  return adminState.localContacts.filter((contact) => contact.entityType !== "institution" && contactMatchesFilters(contact, filters, fieldsById));
 }
 
 function isAllFilteredContactSelectionActive(filters = contactSearchFilters()) {
@@ -4624,7 +4637,7 @@ function renderContactForm(contact) {
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
   const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
   const campaignLinks = (adminState.campaignEvents || []).filter((item) => item.participants?.some((participant) => participant.contactId === contact.id)).map((item) => `<button type="button" data-open-contact-campaign-event="${attr(item.id)}">🎟 ${text(formatDate(item.startAt))} — ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}${contact.institutionId ? `<div class="contact-institution-link"><strong>Institution associée :</strong> <button type="button" data-admin-section="institutions">Voir les institutions</button></div>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
