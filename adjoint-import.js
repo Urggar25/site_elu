@@ -218,6 +218,12 @@
           }
           created.push(entry);
           local.push(entry);
+          if (institution) {
+            const currentInstitution = institutionsUpdated.get(institution.id) || institution;
+            institutionsUpdated.set(institution.id, person.role === "maire"
+              ? { ...currentInstitution, mayorContactId: entry.id, updatedAt: new Date().toISOString() }
+              : { ...currentInstitution, deputyContactIds: [...new Set([...(currentInstitution.deputyContactIds || []), entry.id])], updatedAt: new Date().toISOString() });
+          }
           if (person.role === "maire") addedMaires++;
           else addedAdjoints++;
           continue;
@@ -245,7 +251,7 @@
               if (localIndex >= 0) local[localIndex] = next;
             } else updated.set(current.id, next);
             if (person.role === "maire") {
-              institutionsUpdated.set(institution.id, { ...institution, mayorContactId: current.id, updatedAt: new Date().toISOString() });
+              institutionsUpdated.set(institution.id, { ...(institutionsUpdated.get(institution.id) || institution), mayorContactId: current.id, updatedAt: new Date().toISOString() });
             } else {
               const already = institutionsUpdated.get(institution.id) || institution;
               institutionsUpdated.set(institution.id, { ...already, deputyContactIds: [...new Set([...(already.deputyContactIds || []), current.id])], updatedAt: new Date().toISOString() });
