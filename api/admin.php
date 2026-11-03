@@ -158,6 +158,7 @@ function admin_partial_update_paths(): array
         'calendarEventCategories',
         'contactFields',
         'savedContactSearches',
+        'institutions',
         'mailTemplates',
         'deletedContactFields',
         'contactKeywords',
