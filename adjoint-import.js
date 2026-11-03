@@ -123,8 +123,8 @@
       const lastName = String(row[index.last] || "").trim();
       const firstName = String(row[index.first] || "").trim();
       const functionLabel = key(row[index.role]);
-      const role = /\bmaire\b/.test(functionLabel) ? "maire" :
-        /\badjoint(?:e)?\b/.test(functionLabel) ? "adjoint" : "";
+      const role = /\badjoint(?:e)?\b/.test(functionLabel) ? "adjoint" :
+        /\bmaire\b/.test(functionLabel) ? "maire" : "";
       if (!role) continue;
       if (!commune || !firstName || !lastName) {
         skipped.push("Ligne " + (i + 1) + " : commune, nom ou prénom manquant.");
