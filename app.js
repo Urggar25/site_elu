@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261008-stable-saves-v3";
+const ASSET_VERSION = "20261103-saved-contact-searches-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
