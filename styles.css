@@ -11412,3 +11412,47 @@ body.admin-mode .calendar-attendance-choice input { width: 17px; min-width: 17px
 .contact-keyword-swatch { width: .7rem; height: .7rem; display: inline-block; border-radius: 50%; flex: 0 0 auto; }
 .contact-keyword-search > small { display: block; color: #4e627a; font-size: .77rem; }
 @media (max-width: 700px) { .contact-keyword-search { margin: .45rem; padding: .6rem; } .contact-keyword-mode label { flex: 1 1 150px; } }
+
+/* Gestion autonome des événements de campagne et inscriptions */
+.campaign-major-page { display:grid; gap:1.1rem; padding:1.2rem; }
+.campaign-major-heading { display:flex; justify-content:space-between; align-items:center; gap:.8rem; flex-wrap:wrap; }
+.campaign-major-heading h2 { margin:0 0 .25rem; }
+.campaign-major-heading p { margin:0; color:#61728a; }
+.campaign-major-columns { display:grid; grid-template-columns:minmax(240px,1fr) minmax(350px,2fr); gap:1rem; align-items:start; }
+.campaign-major-list { display:grid; gap:.55rem; max-height:75vh; overflow:auto; }
+.campaign-major-card { display:grid; gap:.35rem; width:100%; padding:.85rem; border:1px solid #cfdaea; border-radius:10px; background:white; color:inherit; text-align:left; cursor:pointer; }
+.campaign-major-card.is-active, .campaign-major-card:focus-visible { border-color:#3979bf; background:#edf5ff; }
+.campaign-major-card small { color:#5c6d85; }
+.campaign-major-card > span { color:#275c9a; font-size:.81rem; }
+.campaign-major-detail { min-width:0; display:grid; gap:1rem; border:1px solid #d6e1ef; border-radius:12px; background:#fff; padding:1rem; }
+.campaign-major-detail > header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.55rem; }
+.campaign-major-detail h3 { margin:0; }
+.campaign-major-form { display:grid; gap:.75rem; }
+.campaign-major-form label { display:grid; gap:.3rem; }
+.campaign-major-form input,.campaign-major-form textarea { width:100%; min-width:0; }
+.campaign-major-dates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; }
+.campaign-major-calendar { display:flex; gap:.55rem; align-items:center; flex-wrap:wrap; border:1px solid #d9e5ef; border-radius:8px; padding:.7rem; background:#f6faff; }
+.campaign-major-calendar > div { flex:1 1 160px; }
+.campaign-major-calendar p { margin:.2rem 0 0; color:#5a6b81; font-size:.85rem; }
+.campaign-major-attendance { display:grid; gap:.8rem; padding-top:.85rem; border-top:1px solid #d3e0ef; }
+.campaign-major-attendance > header { display:flex; justify-content:space-between; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.campaign-major-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; }
+.campaign-major-stats > div { display:grid; gap:.2rem; border-radius:9px; background:#f1f6fd; padding:.7rem; border:1px solid #dce7f5; }
+.campaign-major-stats strong { font-size:1.55rem; color:#204f89; }
+.campaign-major-stats small { color:#5b6c84; font-size:.72rem; }
+.campaign-major-attendance > label { display:grid; gap:.3rem; }
+.campaign-major-attendance input[type="search"] { width:100%; }
+.campaign-major-search-results { display:grid; gap:.3rem; max-height:180px; overflow:auto; }
+.campaign-major-search-results > button { display:grid; gap:.2rem; padding:.55rem; text-align:left; cursor:pointer; background:#f6f9ff; border-radius:7px; border:1px solid #ccdaed; }
+.campaign-major-search-results small { color:#5d7189; }
+.campaign-major-participants { display:grid; gap:.45rem; max-height:460px; overflow:auto; }
+.campaign-major-participant { display:grid; grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(105px,1fr)) auto; align-items:center; gap:.5rem; background:#fbfcfe; padding:.6rem; border:1px solid #dfe7f0; border-radius:8px; }
+.campaign-major-participant > button:first-child { grid-column:1; border:0; background:none; color:#17549e; text-align:left; font-weight:700; cursor:pointer; padding:0; overflow-wrap:anywhere; }
+.campaign-major-participant > small { grid-column:1; font-size:.75rem; color:#6b7b91; overflow-wrap:anywhere; }
+.campaign-major-participant label { display:flex; align-items:center; gap:.3rem; font-size:.83rem; cursor:pointer; }
+.campaign-major-participant input[type="checkbox"] { width:17px; height:17px; min-width:17px; }
+.campaign-major-participant button.danger { grid-column:4; grid-row:1 / span 2; }
+.campaign-major-placeholder { border:1px dashed #c9d8e7; padding:2rem 1rem; border-radius:10px; color:#61718a; }
+.campaign-major-agenda-backlink { margin:.5rem 0; }
+@media(max-width:980px) { .campaign-major-columns { grid-template-columns:1fr; } .campaign-major-list { max-height:280px; } .campaign-major-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:650px) { .campaign-major-page { padding:.65rem; } .campaign-major-dates { grid-template-columns:1fr; } .campaign-major-participant { grid-template-columns:minmax(0,1fr) auto; } .campaign-major-participant > small { grid-column:1 / -1; } .campaign-major-participant label { grid-column:1 / -1; } .campaign-major-participant button.danger { grid-column:2; grid-row:1; } }
