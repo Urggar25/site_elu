@@ -25,3 +25,5 @@
 22. Pour les campagnes de mails, garder les clés fournisseur et l'adresse expéditrice dans `api/db.php` privé ; ne jamais les envoyer à l'état administratif public. Construire les listes de destinataires côté serveur à partir des recherches enregistrées et exiger le consentement explicite, la déduplication et la désinscription.
 
 23. Pour les liens contacts ↔ calendrier, enregistrer les IDs uniquement dans `calendarEvents[].contactIds`, construire le sens inverse par recherche, et nettoyer ces IDs lors des suppressions de contacts. Une navigation de contact vers calendrier doit sélectionner la date et ouvrir l'événement ; la navigation inverse doit vider les filtres empêchant de voir la fiche.
+
+24. Dans les cases des vues jour/semaine/mois de l'agenda, ne pas réintroduire d'horaires en texte : la grille et l'infobulle les donnent déjà. Dans l'éditeur d'événement, les contacts liés affichent directement leurs téléphones et leur email depuis la fiche (sans les dupliquer en base), avec des liens `tel:` et `mailto:` protégés par échappement HTML.
