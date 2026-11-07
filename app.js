@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261103-safe-lazy-contact-v1";
+const ASSET_VERSION = "20261107-mobile-photo-fix-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -5530,25 +5530,63 @@ async function decodeBrowserImage(blob, fileName) {
       try { return await createImageBitmap(blob); } catch {}
     }
   }
+
+  // Some mobile browsers cannot decode an object URL backed by a picker file.
+  // Keep the URL alive until the image has been copied to the canvas.
+  const loadImage = (src) => new Promise((resolve, reject) => {
+    const element = new Image();
+    element.onload = () => resolve(element);
+    element.onerror = () => reject(new Error(`Impossible de lire ${fileName}.`));
+    element.src = src;
+  });
   const objectUrl = URL.createObjectURL(blob);
   try {
-    return await new Promise((resolve, reject) => {
-      const element = new Image();
-      element.onload = () => resolve(element);
-      element.onerror = () => reject(new Error(`Impossible de lire ${fileName}.`));
-      element.src = objectUrl;
-    });
+    const image = await loadImage(objectUrl);
+    // Decouple the decoded image from the temporary URL before revoking it.
+    const canvas = document.createElement("canvas");
+    const ratio = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.round(image.naturalWidth * ratio);
+    canvas.height = Math.round(image.naturalHeight * ratio);
+    if (!canvas.width || !canvas.height) throw new Error(`Impossible de lire ${fileName}.`);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Impossible de préparer l'image sur cet appareil.");
+    context.drawImage(image, 0, 0);
+    return canvas;
+  } catch (objectUrlError) {
+    // Android gallery / document pickers sometimes expose images that only
+    // decode correctly once read into a regular data URL.
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error || objectUrlError);
+        reader.readAsDataURL(blob);
+      });
+      return await loadImage(dataUrl);
+    } catch {
+      throw objectUrlError;
+    }
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+async function isHeifImage(file) {
+  if (/hei[cf]/i.test(file.type || "") || /\.(?:heic|heif)$/i.test(file.name || "")) return true;
+  // Phones may label a HEIC as image/jpeg or application/octet-stream.
+  try {
+    const header = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    const brand = String.fromCharCode(...header.slice(8, 12));
+    return header[4] === 0x66 && header[5] === 0x74 && header[6] === 0x79 && header[7] === 0x70
+      && /^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(brand);
+  } catch { return false; }
 }
 
 async function decodePhotoFile(file) {
   try {
     return await decodeBrowserImage(file, file.name);
   } catch (nativeError) {
-    const isHeic = /hei[cf]/i.test(file.type || "") || /\.(?:heic|heif)$/i.test(file.name || "");
-    if (!isHeic) throw nativeError;
+    if (!await isHeifImage(file)) throw nativeError;
     try {
       const { heicTo } = await import("./assets/vendor/heic-to-csp.js?v=1.5.2");
       const converted = await heicTo({ blob: file, type: "image/jpeg", quality: 0.9 });
