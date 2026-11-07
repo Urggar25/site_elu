@@ -5544,8 +5544,9 @@ async function decodeBrowserImage(blob, fileName) {
     const image = await loadImage(objectUrl);
     // Decouple the decoded image from the temporary URL before revoking it.
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    const ratio = Math.min(1, 1440 / Math.max(image.naturalWidth, image.naturalHeight));
+    canvas.width = Math.round(image.naturalWidth * ratio);
+    canvas.height = Math.round(image.naturalHeight * ratio);
     if (!canvas.width || !canvas.height) throw new Error(`Impossible de lire ${fileName}.`);
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Impossible de préparer l'image sur cet appareil.");
