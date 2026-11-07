@@ -2,7 +2,7 @@ const STORAGE_KEY = "emeric-salmon-site-v3";
 const SESSION_KEY = "emeric-salmon-current-user";
 const ADMIN_STORAGE_KEY = "emeric-salmon-admin-v2";
 const LEGACY_STORAGE_KEYS = ["emeric-sallmon-site-v3", "emeric-salmon-site-v2", "emeric-salmon-admin-v1"];
-const ASSET_VERSION = "20261107-mobile-photo-fix-v1";
+const ASSET_VERSION = "20261107-staff-activity-v1";
 const API_BASE = "api";
 const EVENT_PHOTO_FOLDER_ID = "photos-evenements";
 const IS_LOCAL_MODE = ["localhost", "127.0.0.1", ""].includes(window.location.hostname) || window.location.protocol === "file:";
@@ -5751,7 +5751,42 @@ function renderAddons() {
 
 function renderActivity() {
   const taskAlerts = assignedTaskNotifications();
-  return `<div class="notification-center">${taskAlerts.length ? `<section class="assigned-task-alerts"><header><h2>Mes notifications</h2><p>Ces alertes restent visibles jusqu'a ce que les taches soient terminees.</p></header>${taskAlerts.map((alert) => `<button type="button" data-open-permanence="${attr(alert.requestId)}"><span>!</span><div><strong>${text(alert.title)}</strong><p>${text(alert.message)}</p><small>${text(alert.dueDate ? `Echeance : ${formatDate(alert.dueDate)}` : "Sans echeance")}</small></div></button>`).join("")}</section>` : `<section class="assigned-task-alerts is-empty"><h2>Mes notifications</h2><p>Aucune tache en attente ne vous est attribuee.</p></section>`}<section class="admin-table">${adminState.activityLog.map(renderActivityRow).join("") || empty("Aucune activite.")}</section></div>`;
+  const now = Date.now();
+  const weekStart = now - 7 * 86400000;
+  const monthStart = now - 30 * 86400000;
+  const staff = new Map();
+  for (const user of [...(state.users || []), ...(adminUsersLoaded ? adminUsers : [])]) {
+    if (!user?.id || roleRank(user.role) < roleRank("moderator")) continue;
+    staff.set(String(user.id), user);
+  }
+  const records = (adminState.activityLog || []).filter((item) => Number.isFinite(Date.parse(item.createdAt || "")))
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const byUser = new Map();
+  for (const record of records) {
+    const id = String(record.userId || "");
+    if (!staff.has(id)) continue;
+    if (!byUser.has(id)) byUser.set(id, []);
+    byUser.get(id).push(record);
+  }
+  const memberCards = [...staff.values()].map((user) => {
+    const actions = byUser.get(String(user.id)) || [];
+    const lastWeek = actions.filter((item) => Date.parse(item.createdAt) >= weekStart && Date.parse(item.createdAt) <= now);
+    const lastMonth = actions.filter((item) => Date.parse(item.createdAt) >= monthStart && Date.parse(item.createdAt) <= now);
+    const label = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.login || user.email || "Membre du staff";
+    return { user, label, lastWeek, lastMonth };
+  }).sort((a, b) => b.lastMonth.length - a.lastMonth.length || a.label.localeCompare(b.label, "fr"));
+  const totalWeek = memberCards.reduce((total, member) => total + member.lastWeek.length, 0);
+  const totalMonth = memberCards.reduce((total, member) => total + member.lastMonth.length, 0);
+  return `<div class="notification-center">
+    ${taskAlerts.length ? `<section class="assigned-task-alerts"><header><h2>Mes notifications</h2><p>Ces alertes restent visibles jusqu'a ce que les taches soient terminees.</p></header>${taskAlerts.map((alert) => `<button type="button" data-open-permanence="${attr(alert.requestId)}"><span>!</span><div><strong>${text(alert.title)}</strong><p>${text(alert.message)}</p><small>${text(alert.dueDate ? `Echeance : ${formatDate(alert.dueDate)}` : "Sans echeance")}</small></div></button>`).join("")}</section>` : `<section class="assigned-task-alerts is-empty"><h2>Mes notifications</h2><p>Aucune tache en attente ne vous est attribuee.</p></section>`}
+    <section class="admin-panel"><h2>Activité des membres du staff</h2><p>Actions enregistrées sur les 7 et 30 derniers jours (périodes glissantes). Le détail est masqué par défaut.</p><p><strong>${totalWeek} action(s) sur 7 jours</strong> · <strong>${totalMonth} action(s) sur 30 jours</strong></p><small>Les compteurs portent sur l'historique encore conservé par le site ; ils ne représentent pas nécessairement toutes les tâches réalisées hors du site.</small></section>
+    <section class="admin-table">${memberCards.map(({ user, label, lastWeek, lastMonth }) => `
+      <details class="admin-row staff-activity-detail">
+        <summary><strong>${text(label)}</strong> · ${text(roleLabel(user.role))} — <strong>${lastWeek.length}</strong> sur 7 jours · <strong>${lastMonth.length}</strong> sur 30 jours <span>▾ Voir les actions</span></summary>
+        <div><h4>Actions des 30 derniers jours (${lastMonth.length})</h4>${lastMonth.length ? lastMonth.map(renderActivityRow).join("") : "<p>Aucune action enregistrée sur cette période.</p>"}</div>
+      </details>`).join("") || empty("Aucun membre du staff trouvé.")}
+    </section>
+  </div>`;
 }
 
 function assignedTaskNotifications() {
