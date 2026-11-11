@@ -4873,7 +4873,7 @@ function renderContacts() {
     <section class="contact-search-panel">
       <header class="contact-search-head">
         <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.filter((item) => item.entityType !== "institution").length} personne(s)</p></div>
-        <button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button>
+        <div class="contact-search-head-actions"><button class="secondary-action compact contact-create-shortcut" type="button" data-contact-create-shortcut aria-label="Créer un nouveau contact">+ Nouveau contact</button><button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button></div>
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
         <div class="contact-universal-search"><label for="contact-query-input">Recherche dans tous les champs</label><div class="contact-universal-input"><input id="contact-query-input" name="q" type="search" autocomplete="off" value="${attr(filters.q||"")}" placeholder="Nom, prénom, organisation, téléphone, mot-clé…"/><button class="primary-action" type="submit">Rechercher</button></div></div>
@@ -4942,70 +4942,53 @@ function updateContactDeletionProgressDom() {
   if (detail) detail.textContent = `${progress.deleted || 0} / ${progress.total || 0} ${progress.label || "contacts"} supprime(s)`;
 }
 
+let contactIoTab = "import";
 function renderContactImportExport() {
-  return `<div class="contacts-admin contact-io-page">
+  const tab = ["import", "export", "create"].includes(contactIoTab) ? contactIoTab : "import";
+  const count = (adminState.localContacts || []).filter(c => c.entityType !== "institution").length;
+  const createFields = contactFields().filter(field => field.id !== "id" && field.id !== "deathDateApprox" && field.id !== "emailCampaignStatus");
+  return \`<div class="contacts-admin contact-io-page">
     <section class="contact-io-hero">
-      <h2>Import / export de contacts</h2>
-      <p>Importez, exportez ou creez de nouvelles fiches de contact.</p>
+      <div><span class="contact-io-eyebrow">Gestion des contacts</span><h2>Importation, exportation et création</h2>
+      <p>Trois espaces indépendants, avec les mêmes champs et mots-clés que vos fiches contacts.</p></div>
+      <button type="button" class="secondary-action compact" data-admin-section="contacts">← Revenir aux contacts</button>
     </section>
-    ${contactImportStatus ? renderContactImportLoading() : ""}
-    ${pendingContactImport ? renderContactImportMapping() : ""}
-    <div class="contact-io-tabs" aria-label="Outils contact">
-      <button class="is-active" type="button">Importation</button>
-      <button type="button">Exportation</button>
-      <button type="button">Creation de contact</button>
-    </div>
-    <div class="contact-io-grid">
-      <section class="contact-io-card">
-        <h3>Importer des contacts</h3>
-        <p>Importez vos contacts depuis un fichier CSV ou JSON.</p>
-        <label class="contact-dropzone">
-          <span aria-hidden="true">+</span>
-          <strong>Glissez-deposez votre fichier ici</strong>
-          <small>ou</small>
-          <b>Parcourir un fichier</b>
-          <input type="file" data-contact-import="csv" accept=".csv,text/csv" />
-        </label>
-        <small>Formats acceptes : .csv</small>
-        <label class="import-button compact contact-json-import">Importer un JSON<input type="file" data-contact-import="json" accept=".json,application/json" /></label>
-        <div class="contact-io-options">
-          <label><input type="checkbox" checked disabled /> Mettre a jour les contacts existants</label>
-          <label><input type="checkbox" checked disabled /> Ignorer les doublons</label>
-          <label><input type="checkbox" checked disabled /> Ajouter les tags / mots-cles</label>
-        </div>
-      </section>
-      <section class="contact-io-card">
-        <h3>Exporter des contacts</h3>
-        <p>Choisissez les contacts a exporter et le format souhaite.</p>
-        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="all" checked /> Tous les contacts</label><small>Exporter l'ensemble de vos contacts.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="filtered" /> Contacts filtres</label><small>Export selon les filtres appliques.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="selected" /> Contacts selectionnes</label><small>Export uniquement les contacts selectionnes.</small></div>
-        <label>Format d'export<select><option>CSV (separateur point-virgule)</option><option>JSON</option></select></label>
-        <div class="contact-admin-actions"><button class="primary-action" type="button" data-contact-export="csv">Exporter les contacts</button><button class="secondary-action" type="button" data-contact-export="json">Exporter JSON</button></div>
-      </section>
-      <section class="contact-io-card">
-        <h3>Creer une fiche de contact</h3>
-        <p>Ajoutez manuellement un nouveau contact a votre base.</p>
-        <form class="contact-create-card" data-contact-create>
-          <div class="contact-create-avatar" aria-hidden="true"></div>
-          <div class="contact-create-grid">
-            <label>Civilite<select name="title"><option>M.</option><option>Mme</option></select></label>
-            <label>Prenom *<input name="firstName" placeholder="Ex. Jean" required /></label>
-            <label>Nom *<input name="lastName" placeholder="Ex. Durand" required /></label>
-            <label>Email<input name="email" type="email" placeholder="exemple@email.com" /></label>
-            <label>Telephone<input name="mobile" placeholder="06 12 34 56 78" /></label>
-            <label>Adresse<input name="streetName" placeholder="Adresse postale complete" /></label>
-            <label>Code postal<input name="postalCode" placeholder="Ex. 75001" /></label>
-            <label>Ville<input name="city" placeholder="Ex. Paris" /></label>
-            <label>Pays<input name="country" value="France" /></label>
-            <label>Tags / Mots-cles<input name="keywords" placeholder="Rechercher ou ajouter un mot-cle..." /></label>
-            <label>Notes<textarea name="notes" placeholder="Informations complementaires..."></textarea></label>
-          </div>
-          <button class="primary-action" type="submit">Enregistrer le contact</button>
-        </form>
-      </section>
-    </div>
-  </div>`;
+    <nav class="contact-io-tabs" aria-label="Gestion des contacts">
+      <button type="button" data-contact-io-tab="import" class="\${tab==="import"?"is-active":""}" aria-current="\${tab==="import"?"page":"false"}"><span>01</span> Importer</button>
+      <button type="button" data-contact-io-tab="export" class="\${tab==="export"?"is-active":""}" aria-current="\${tab==="export"?"page":"false"}"><span>02</span> Exporter</button>
+      <button type="button" data-contact-io-tab="create" class="\${tab==="create"?"is-active":""}" aria-current="\${tab==="create"?"page":"false"}"><span>03</span> Créer un contact</button>
+    </nav>
+    \${tab==="import" ? \`<section class="contact-io-workspace" aria-label="Importation">
+      <header class="contact-io-workspace-head"><div><h3>Importer des contacts</h3><p>Ajoutez un fichier CSV ou JSON. Pour les CSV, vérifiez les correspondances avant validation.</p></div><span class="contact-io-stat">\${count} contacts actuels</span></header>
+      \${contactImportStatus ? renderContactImportLoading() : ""}
+      \${pendingContactImport ? renderContactImportMapping() : ""}
+      <div class="contact-io-import-options">
+        <div class="contact-io-card"><h4>Fichier CSV</h4><p>Choisissez un fichier CSV ; les colonnes seront associées aux champs de contact.</p>
+          <label class="contact-dropzone"><span aria-hidden="true">↑</span><strong>Choisir un fichier CSV</strong><small>Fichier .csv</small><input type="file" data-contact-import="csv" accept=".csv,text/csv" /></label></div>
+        <div class="contact-io-card"><h4>Fichier JSON</h4><p>Importez les fiches issues d'un export compatible.</p>
+          <label class="import-button compact contact-json-import">Choisir un fichier JSON<input type="file" data-contact-import="json" accept=".json,application/json" /></label>
+          <small>Pour éviter les doublons, vérifiez les résultats après importation.</small></div>
+      </div>
+    </section>\` : ""}
+    \${tab==="export" ? \`<section class="contact-io-workspace" aria-label="Exportation">
+      <header class="contact-io-workspace-head"><div><h3>Exporter des contacts</h3><p>Sélectionnez le périmètre puis le format à télécharger.</p></div><span class="contact-io-stat">\${count} contacts disponibles</span></header>
+      <div class="contact-io-export-choices" role="group" aria-label="Contacts à exporter">
+        <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="all" checked /><strong>Tous les contacts</strong><small>Base complète</small></label>
+        <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="filtered" /><strong>Résultats de la recherche</strong><small>Respecte les filtres de contacts en cours</small></label>
+        <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="selected" /><strong>Contacts sélectionnés</strong><small>Respecte la sélection en cours</small></label>
+      </div>
+      <div class="contact-io-export-actions"><p>CSV pour les tableurs · JSON pour conserver la structure des champs.</p><button class="primary-action" type="button" data-contact-export="csv">↓ Télécharger CSV</button><button class="secondary-action" type="button" data-contact-export="json">↓ Télécharger JSON</button></div>
+    </section>\` : ""}
+    \${tab==="create" ? \`<section class="contact-io-workspace" aria-label="Création de contact">
+      <header class="contact-io-workspace-head"><div><h3>Créer une fiche de contact</h3><p>Les champs correspondent exactement aux paramètres « Champs contact ». Les mots-clés sont sélectionnables et créables directement.</p></div></header>
+      <form class="contact-create-card contact-create-unified" data-contact-create>
+        <div class="contact-create-section-head"><strong>Informations du contact</strong><span>Les champs marqués obligatoires sont requis.</span></div>
+        <div class="contact-form-grid">\${createFields.filter(field=>field.id!=="keywords").map(field=>renderContactInput(field, field.id==="country"?{country:"France"}:{})).join("")}</div>
+        \${createFields.some(field=>field.id==="keywords")?renderContactTagEditor({}):""}
+        <div class="contact-create-footer"><button class="secondary-action" type="reset">Effacer</button><button class="primary-action" type="submit">Créer le contact</button></div>
+      </form>
+    </section>\` : ""}
+  </div>\`;
 }
 
 function renderContactImportLoading() {
@@ -6861,35 +6844,25 @@ function createContact(form) {
   const previousState = { ...cloneAdminState(), localContacts: adminState.localContacts.slice() };
   const data = new FormData(form);
   const now = new Date().toISOString();
-  const usedIds = new Set(adminState.localContacts.map((item) => item.id));
-  const contact = normalizeContactRecord({
-    id: "",
-    firstName: String(data.get("firstName") || ""),
-    lastName: String(data.get("lastName") || ""),
-    email: String(data.get("email") || ""),
-    mobile: String(data.get("mobile") || ""),
-    city: String(data.get("city") || ""),
-    postalCode: String(data.get("postalCode") || ""),
-    streetName: String(data.get("streetName") || ""),
-    country: String(data.get("country") || ""),
-    category: "autre",
-    keywords: String(data.get("keywords") || "").split(/[,;]/).map((item) => item.trim()).filter(Boolean),
-    comments: [],
-    createdAt: now,
-    updatedAt: now
-  }, usedIds);
-  const catalogueChanged=registerContactKeywords(contact);
-  contactFields().filter((field) => !field.system).forEach((field) => {
-    if (["id", "firstName", "lastName", "email", "city"].includes(field.id)) return;
-    const value = contactValueFromForm(data, field);
-    if (value !== "" && !(Array.isArray(value) && !value.length)) contact[field.id] = value;
+  const contact = { id: "", keywords: [], comments: [], createdAt: now, updatedAt: now };
+  contactFields().filter(field => field.id !== "id").forEach(field => {
+    contact[field.id] = contactValueFromForm(data, field);
   });
-  normalizeContactRecord(contact, new Set(adminState.localContacts.map((item) => item.id)));
-  adminState.localContacts.unshift(contact);
-  selectedContactId = contact.id;
-  form.reset();
-  if(catalogueChanged)saveAdminStateToDatabaseOnly("creation","contact",contactDisplayName(contact),previousState);
-  else saveAdminEntityUpdates([adminEntityUpdate("localContacts", contact, { insertIfMissing: true })], "creation", "contact", contactDisplayName(contact), previousState);
+  // Keep the modern keyword field and any legacy tags compatible with the editor.
+  contact.keywords = [...new Set(contact.keywords.map(value => String(value).trim()).filter(Boolean))];
+  contact.tags = [...contact.keywords];
+  if (!String(contact.lastName || "").trim()) {
+    showToast("Renseignez au minimum le nom du contact.");
+    return;
+  }
+  const normalized = normalizeContactRecord(contact, new Set(adminState.localContacts.map(item => item.id)));
+  const catalogueChanged = registerContactKeywords(normalized);
+  adminState.localContacts.unshift(normalized);
+  selectedContactId = normalized.id;
+  contactIoTab = "create";
+  if (catalogueChanged) saveAdminStateToDatabaseOnly("creation", "contact", contactDisplayName(normalized), previousState);
+  else saveAdminEntityUpdates([adminEntityUpdate("localContacts", normalized, { insertIfMissing: true })], "creation", "contact", contactDisplayName(normalized), previousState);
+  showToast("Contact créé : " + contactDisplayName(normalized));
 }
 
 function updateContactReferences(previousId, nextId) {
@@ -8844,6 +8817,10 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
+  const contactCreateShortcut = event.target.closest("[data-contact-create-shortcut]");
+  if (contactCreateShortcut) { contactIoTab = "create"; activeAdminSection = "contact-io"; renderAdmin(); return; }
+  const contactIoTabButton = event.target.closest("[data-contact-io-tab]");
+  if (contactIoTabButton) { contactIoTab = contactIoTabButton.dataset.contactIoTab; renderAdmin(); return; }
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
   if (savedToggle) {
     const menu = document.querySelector("#contact-saved-popover");
