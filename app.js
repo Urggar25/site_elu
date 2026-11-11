@@ -3435,7 +3435,10 @@ function normalizeSavedContactSearches(items) {
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
     sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : [],
-    mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR"
+    mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR",
+    isSnapshot: item.isSnapshot === true,
+    snapshotIds: Array.isArray(item.snapshotIds) ? [...new Set(item.snapshotIds.filter(id=>typeof id==="string"))] : [],
+    favorite: item.favorite === true
   })).slice(0, 200);
 }
 
@@ -3454,6 +3457,7 @@ function savedContactSearchFilters(form) {
 }
 
 function savedContactSearchLabel(item) {
+  if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
   if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
   const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
@@ -3464,6 +3468,7 @@ function savedSearchContacts(item, searches = normalizeSavedContactSearches(admi
   if (!item || visited.has(item.id)) return [];
   const next = new Set(visited);
   next.add(item.id);
+  if (item.isSnapshot) return item.snapshotIds.map(id=>contactById(id)).filter(Boolean);
   if (item.sourceIds?.length) {
     const byId = new Map(searches.map((entry) => [entry.id, entry]));
     const lists=item.sourceIds.map(id=>savedSearchContacts(byId.get(id),searches,next));
@@ -3546,6 +3551,29 @@ function exportSavedContactSearch(id) {
   showToast(result.rows.length + " adresses exportées · " + (result.totalAvoided + overlaps) + " doublon(s) évité(s), dont " + overlaps + " répétitions entre recherches.");
 }
 
+function freezeSavedContactSearch(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches);
+  const src=list.find(item=>item.id===id);
+  if(!src)return;
+  const ids=savedSearchContacts(src,list).map(c=>c.id);
+  const name=(src.name+" — figée").slice(0,120),now=new Date().toISOString();
+  adminState.savedContactSearches=[{id:crypto.randomUUID(),name,isSnapshot:true,snapshotIds:ids,filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId},...list];
+  saveAdminState("creation","recherche contact enregistree",name);
+  showToast(ids.length+" contacts figés dans une nouvelle liste.");
+}
+function favoriteSavedContactSearch(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches);
+  adminState.savedContactSearches=list.map(item=>item.id===id?{...item,favorite:!item.favorite}:item);
+  saveAdminState("modification","recherche contact enregistree","favori");
+}
+function exportSavedContactPeople(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches),item=list.find(e=>e.id===id);
+  if(!item)return;
+  const contacts=savedSearchContacts(item,list),headers=contactFields().map(f=>f.id);
+  const rows=[headers,...contacts.map(c=>headers.map(key=>Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
+  downloadFile("personnes-"+slugify(item.name)+".xlsx",participantWorkbookBytes(rows),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  showToast(contacts.length+" personnes exportées, une ligne par fiche.");
+}
 function mergeSavedContactSearches() {
   const checked = [...document.querySelectorAll("[data-saved-search-merge]:checked")].map((input) => input.value);
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
@@ -3568,7 +3596,7 @@ function mergeSavedContactSearches() {
 }
 
 function renderSavedContactSearches({ standalone = false } = {}) {
-  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches).sort((a,b)=>Number(b.favorite)-Number(a.favorite));
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
@@ -3581,7 +3609,7 @@ function renderSavedContactSearches({ standalone = false } = {}) {
         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
           <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Statistiques en cours de calcul…</small>
         </button>
-        <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel</button>
+        <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel adresses</button><button type="button" class="secondary-action compact" data-contact-export-people="${attr(item.id)}">Excel personnes</button><button type="button" class="secondary-action compact" data-contact-freeze-search="${attr(item.id)}" title="Créer une copie figée des contacts actuels">Figer</button><button type="button" class="secondary-action compact" data-contact-favorite-search="${attr(item.id)}" title="Ajouter ou retirer des favoris">${item.favorite?"★":"☆"}</button>
         ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
         <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}">Supprimer</button>
       </div>`;
@@ -3658,7 +3686,7 @@ function loadContactSearch(id) {
   if (!item) return;
   // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
   clearContactSelection();
-  adminFilters.contacts = item.sourceIds?.length ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
+  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
   adminFilters.activeSavedContactSearchId = item.id;
   activeAdminSection = "contacts";
   renderAdmin();
@@ -3718,7 +3746,7 @@ function filteredContacts(filters = contactSearchFilters()) {
   if (arguments.length === 0 && adminFilters.activeSavedContactSearchId) {
     const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
-    if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
+    if (active?.sourceIds?.length||active?.isSnapshot) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
   const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
@@ -4542,9 +4570,9 @@ function renderContacts() {
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
         <div class="contact-search-main">
-          <label class="contact-search-field"><span>Prénom</span><input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
-          <label class="contact-search-field"><span>Nom</span><input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
-          <label class="contact-search-field"><span>Commune</span><input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Prénom</span>${renderContactOperator({id:"firstName",label:"Prénom",type:"text"},filters)}<input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Nom</span>${renderContactOperator({id:"lastName",label:"Nom",type:"text"},filters)}<input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Commune</span>${renderContactOperator({id:"city",label:"Commune",type:"text"},filters)}<input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
           <button class="primary-action" type="submit">Rechercher</button>
         </div>
         ${renderContactDynamicFilters(filters)}
@@ -6640,6 +6668,7 @@ async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal,
 async function deleteSelectedContactsFast(selectedCount = null) {
   const filters = contactSearchFilters();
   if (isAllFilteredContactSelectionActive(filters)) {
+    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot)){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
     await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
@@ -9054,6 +9083,12 @@ document.addEventListener("click", async (event) => {
   }
   const contactLoadSearch = event.target.closest("[data-contact-load-search]");
   if (contactLoadSearch) { loadContactSearch(contactLoadSearch.dataset.contactLoadSearch); return; }
+  const peopleExport=event.target.closest("[data-contact-export-people]");
+  if(peopleExport){exportSavedContactPeople(peopleExport.dataset.contactExportPeople);return;}
+  const freezeSearch=event.target.closest("[data-contact-freeze-search]");
+  if(freezeSearch){freezeSavedContactSearch(freezeSearch.dataset.contactFreezeSearch);return;}
+  const favoriteSearch=event.target.closest("[data-contact-favorite-search]");
+  if(favoriteSearch){favoriteSavedContactSearch(favoriteSearch.dataset.contactFavoriteSearch);return;}
   const searchExport = event.target.closest("[data-contact-export-search]");
   if (searchExport) { exportSavedContactSearch(searchExport.dataset.contactExportSearch); return; }
   if (event.target.closest("[data-contact-merge-searches]")) { mergeSavedContactSearches(); return; }
