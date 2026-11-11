@@ -3085,7 +3085,7 @@ function mailCampaignSelection() {
   return { searchId: String(values.get("searchId") || ""), templateId: String(values.get("templateId") || ""), consentConfirmed: values.get("consentConfirmed") === "1" };
 }
 function mailSearchUsesUnsupportedRules(item) {
-  if(item.sourceIds?.length||item.isSnapshot)return true;
+  if(item.sourceIds?.length||item.isSnapshot||["manual","hybrid"].includes(item.listType))return true;
   const filters=item.filters||{};
   if(filters.fieldJoinMode==="OR"||filters.activityKind)return true;
   return Object.entries(filters).some(([key,val])=>key.startsWith("op_")&&!["contains",""].includes(val));
