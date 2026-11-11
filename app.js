@@ -4947,21 +4947,21 @@ function renderContactImportExport() {
   const tab = ["import", "export", "create"].includes(contactIoTab) ? contactIoTab : "import";
   const count = (adminState.localContacts || []).filter(c => c.entityType !== "institution").length;
   const createFields = contactFields().filter(field => field.id !== "id" && field.id !== "deathDateApprox" && field.id !== "emailCampaignStatus");
-  return \`<div class="contacts-admin contact-io-page">
+  return `<div class="contacts-admin contact-io-page">
     <section class="contact-io-hero">
       <div><span class="contact-io-eyebrow">Gestion des contacts</span><h2>Importation, exportation et création</h2>
       <p>Trois espaces indépendants, avec les mêmes champs et mots-clés que vos fiches contacts.</p></div>
       <button type="button" class="secondary-action compact" data-admin-section="contacts">← Revenir aux contacts</button>
     </section>
     <nav class="contact-io-tabs" aria-label="Gestion des contacts">
-      <button type="button" data-contact-io-tab="import" class="\${tab==="import"?"is-active":""}" aria-current="\${tab==="import"?"page":"false"}"><span>01</span> Importer</button>
-      <button type="button" data-contact-io-tab="export" class="\${tab==="export"?"is-active":""}" aria-current="\${tab==="export"?"page":"false"}"><span>02</span> Exporter</button>
-      <button type="button" data-contact-io-tab="create" class="\${tab==="create"?"is-active":""}" aria-current="\${tab==="create"?"page":"false"}"><span>03</span> Créer un contact</button>
+      <button type="button" data-contact-io-tab="import" class="${tab==="import"?"is-active":""}" aria-current="${tab==="import"?"page":"false"}"><span>01</span> Importer</button>
+      <button type="button" data-contact-io-tab="export" class="${tab==="export"?"is-active":""}" aria-current="${tab==="export"?"page":"false"}"><span>02</span> Exporter</button>
+      <button type="button" data-contact-io-tab="create" class="${tab==="create"?"is-active":""}" aria-current="${tab==="create"?"page":"false"}"><span>03</span> Créer un contact</button>
     </nav>
-    \${tab==="import" ? \`<section class="contact-io-workspace" aria-label="Importation">
-      <header class="contact-io-workspace-head"><div><h3>Importer des contacts</h3><p>Ajoutez un fichier CSV ou JSON. Pour les CSV, vérifiez les correspondances avant validation.</p></div><span class="contact-io-stat">\${count} contacts actuels</span></header>
-      \${contactImportStatus ? renderContactImportLoading() : ""}
-      \${pendingContactImport ? renderContactImportMapping() : ""}
+    ${tab==="import" ? `<section class="contact-io-workspace" aria-label="Importation">
+      <header class="contact-io-workspace-head"><div><h3>Importer des contacts</h3><p>Ajoutez un fichier CSV ou JSON. Pour les CSV, vérifiez les correspondances avant validation.</p></div><span class="contact-io-stat">${count} contacts actuels</span></header>
+      ${contactImportStatus ? renderContactImportLoading() : ""}
+      ${pendingContactImport ? renderContactImportMapping() : ""}
       <div class="contact-io-import-options">
         <div class="contact-io-card"><h4>Fichier CSV</h4><p>Choisissez un fichier CSV ; les colonnes seront associées aux champs de contact.</p>
           <label class="contact-dropzone"><span aria-hidden="true">↑</span><strong>Choisir un fichier CSV</strong><small>Fichier .csv</small><input type="file" data-contact-import="csv" accept=".csv,text/csv" /></label></div>
@@ -4969,26 +4969,26 @@ function renderContactImportExport() {
           <label class="import-button compact contact-json-import">Choisir un fichier JSON<input type="file" data-contact-import="json" accept=".json,application/json" /></label>
           <small>Pour éviter les doublons, vérifiez les résultats après importation.</small></div>
       </div>
-    </section>\` : ""}
-    \${tab==="export" ? \`<section class="contact-io-workspace" aria-label="Exportation">
-      <header class="contact-io-workspace-head"><div><h3>Exporter des contacts</h3><p>Sélectionnez le périmètre puis le format à télécharger.</p></div><span class="contact-io-stat">\${count} contacts disponibles</span></header>
+    </section>` : ""}
+    ${tab==="export" ? `<section class="contact-io-workspace" aria-label="Exportation">
+      <header class="contact-io-workspace-head"><div><h3>Exporter des contacts</h3><p>Sélectionnez le périmètre puis le format à télécharger.</p></div><span class="contact-io-stat">${count} contacts disponibles</span></header>
       <div class="contact-io-export-choices" role="group" aria-label="Contacts à exporter">
         <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="all" checked /><strong>Tous les contacts</strong><small>Base complète</small></label>
         <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="filtered" /><strong>Résultats de la recherche</strong><small>Respecte les filtres de contacts en cours</small></label>
         <label class="contact-io-choice"><input type="radio" name="contactExportScope" value="selected" /><strong>Contacts sélectionnés</strong><small>Respecte la sélection en cours</small></label>
       </div>
       <div class="contact-io-export-actions"><p>CSV pour les tableurs · JSON pour conserver la structure des champs.</p><button class="primary-action" type="button" data-contact-export="csv">↓ Télécharger CSV</button><button class="secondary-action" type="button" data-contact-export="json">↓ Télécharger JSON</button></div>
-    </section>\` : ""}
-    \${tab==="create" ? \`<section class="contact-io-workspace" aria-label="Création de contact">
+    </section>` : ""}
+    ${tab==="create" ? `<section class="contact-io-workspace" aria-label="Création de contact">
       <header class="contact-io-workspace-head"><div><h3>Créer une fiche de contact</h3><p>Les champs correspondent exactement aux paramètres « Champs contact ». Les mots-clés sont sélectionnables et créables directement.</p></div></header>
       <form class="contact-create-card contact-create-unified" data-contact-create>
         <div class="contact-create-section-head"><strong>Informations du contact</strong><span>Les champs marqués obligatoires sont requis.</span></div>
-        <div class="contact-form-grid">\${createFields.filter(field=>field.id!=="keywords").map(field=>renderContactInput(field, field.id==="country"?{country:"France"}:{})).join("")}</div>
-        \${createFields.some(field=>field.id==="keywords")?renderContactTagEditor({}):""}
+        <div class="contact-form-grid">${createFields.filter(field=>field.id!=="keywords").map(field=>renderContactInput(field, field.id==="country"?{country:"France"}:{})).join("")}</div>
+        ${createFields.some(field=>field.id==="keywords")?renderContactTagEditor({}):""}
         <div class="contact-create-footer"><button class="secondary-action" type="reset">Effacer</button><button class="primary-action" type="submit">Créer le contact</button></div>
       </form>
-    </section>\` : ""}
-  </div>\`;
+    </section>` : ""}
+  </div>`;
 }
 
 function renderContactImportLoading() {
