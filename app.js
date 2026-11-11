@@ -3830,12 +3830,11 @@ function renderSavedContactSearches({ standalone = false } = {}) {
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
-      <div><h3>Mes recherches</h3><p>${standalone?"Gérez, combinez et exportez vos listes.":"Retrouvez vos favoris et dernières recherches."}</p></div>
-      ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
+      <div><h3>Mes listes de contacts</h3><p>${standalone?"Recherches dynamiques, listes manuelles et hybrides.":"Retrouvez vos favoris et listes récentes."}</p></div>
+      ${standalone ? `<button class="secondary-action compact" type="button" data-admin-section="contacts">Créer une recherche dynamique</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
-         <label class="saved-search-check" title="Inclure dans une combinaison"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Sélectionner ${attr(item.name)}" /></label>
          <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
            <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
          </button>
@@ -3845,12 +3844,15 @@ function renderSavedContactSearches({ standalone = false } = {}) {
              <button type="button" data-contact-export-search="${attr(item.id)}">Exporter par adresse</button>
              <button type="button" data-contact-export-people="${attr(item.id)}">Exporter par personne</button>
              <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
+             <button type="button" data-list-rename="${attr(item.id)}">Renommer</button>
+             <button type="button" data-list-duplicate="${attr(item.id)}">Dupliquer</button>
+             ${item.isSnapshot?'':`<button type="button" data-list-edit="${attr(item.id)}">Modifier la liste</button>`}
              ${!item.sourceIds?.length&&!item.isSnapshot?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
              <button type="button" class="danger" data-contact-delete-search="${attr(item.id)}">Supprimer la recherche</button>
            </div>
          </details>
        </div>`;
-    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} listes</button>`:""}` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3891,7 +3893,12 @@ function hydrateSavedContactStats(root) {
 }
 
 function renderSavedContactSearchesPage() {
-  return `<div class="contacts-admin contact-search-page"><header class="contact-search-head"><div><h2>Recherche sauvegardée</h2><p>Fusionnez vos listes et exportez les adresses sans doublons.</p></div></header>${renderSavedContactSearches({ standalone: true })}</div>`;
+  const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+  return `<div class="contacts-admin contact-search-page saved-list-workspace">
+    <header class="contact-search-head"><div><h2>Mes listes de contacts</h2><p>Créez des listes manuelles, hybrides ou des combinaisons de recherches existantes.</p></div></header>
+    ${renderSavedListBuilder(searches)}
+    ${renderSavedContactSearches({standalone:true})}
+  </div>`;
 }
 
 function saveContactSearch(form, existingId = "") {
