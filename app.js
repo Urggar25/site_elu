@@ -1493,7 +1493,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
-  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
+  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "contactKeywords", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
   if (normalized.includes("mot cle contact")) return ["contactKeywords"];
   if (normalized.includes("dossier deces")) return ["deathCases", "localContacts"];
