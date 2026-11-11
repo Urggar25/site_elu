@@ -1493,7 +1493,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
-  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "contactKeywords", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
+  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "contactKeywords", "savedContactSearches", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
   if (normalized.includes("mot cle contact")) return ["contactKeywords"];
   if (normalized.includes("dossier deces")) return ["deathCases", "localContacts"];
@@ -6875,6 +6875,11 @@ function updateContactReferences(previousId, nextId) {
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); for (const rows of Object.values(item.attendanceByDate || {})) rows.forEach((row) => { if (row.contactId === previousId) row.contactId = nextId; }); });
   (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).map((row) => ({...row, contactId: row.contactId === previousId ? nextId : row.contactId})); });
+  (adminState.savedContactSearches||[]).forEach(item=>{
+    ["includeIds","excludeIds","snapshotIds"].forEach(key=>{
+      if(Array.isArray(item[key]))item[key]=[...new Set(item[key].map(id=>id===previousId?nextId:id))];
+    });
+  });
   adminState.deathCases.forEach((item) => {
     if (item.deceasedId === previousId) item.deceasedId = nextId;
     (item.relatives || []).forEach((relative) => { if (relative.contactId === previousId) relative.contactId = nextId; });
@@ -6892,6 +6897,11 @@ function clearDeletedContactReferences(ids) {
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); for (const [day, rows] of Object.entries(item.attendanceByDate || {})) item.attendanceByDate[day] = rows.filter((row) => !deleted.has(row.contactId)); });
   (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).filter((row) => !deleted.has(row.contactId)); });
+  (adminState.savedContactSearches||[]).forEach(item=>{
+    ["includeIds","excludeIds","snapshotIds"].forEach(key=>{
+      if(Array.isArray(item[key]))item[key]=item[key].filter(id=>!deleted.has(id));
+    });
+  });
   adminState.deathCases.forEach((item) => {
     if (deleted.has(item.deceasedId)) item.deceasedId = "";
     item.relatives = (item.relatives || []).filter((relative) => !deleted.has(relative.contactId));
@@ -6960,7 +6970,7 @@ async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal,
 async function deleteSelectedContactsFast(selectedCount = null) {
   const filters = contactSearchFilters();
   if (isAllFilteredContactSelectionActive(filters)) {
-    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot)){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
+    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot||["manual","hybrid"].includes(current.listType))){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
     await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
