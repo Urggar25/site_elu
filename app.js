@@ -3369,38 +3369,51 @@ function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR") {
 function renderContactKeywordFilters(filters) {
   const selected=new Set(normalizedContactKeywordIds(filters.keywordIds));
   const options=contactKeywordChoices();
-  const listed=options.filter(word=>!selected.has(word.id));
-  return `<fieldset class="contact-keyword-search contact-keyword-picker">
-    <legend>Rechercher par mots-clés</legend>
-    <p class="contact-keyword-intro">Retrouvez les mots-clés déjà utilisés sur vos fiches et ceux créés dans l'administration. Tapez pour filtrer.</p>
+  return `<section class="contact-keyword-search contact-keyword-picker" aria-label="Filtrer par mots-clés">
+    <div class="contact-keyword-top"><div><h3>Mots-clés <span class="contact-keyword-count">${selected.size?selected.size+" sélectionné(s)":""}</span></h3><p>Choisissez un ou plusieurs mots-clés pour affiner les résultats.</p></div><span class="contact-keyword-total">${options.length} disponibles</span></div>
     <div class="contact-keyword-searchbar">
-      <label for="contact-keyword-query">Chercher un mot-clé<input id="contact-keyword-query" type="search" data-contact-keyword-query placeholder="Ex. maire, association, urgent…" autocomplete="off" /></label>
-      <span class="contact-keyword-total">${options.length} mot(s)-clé(s) disponibles</span>
+      <label for="contact-keyword-query">Rechercher un mot-clé<input id="contact-keyword-query" type="search" data-contact-keyword-query placeholder="Chercher parmi les mots-clés…" autocomplete="off" /></label>
+      <div class="contact-keyword-mode" role="group" aria-label="Combinaison des mots-clés">
+        <label><input type="radio" name="keywordMode" value="OR" ${filters.keywordMode!=="AND"?"checked":""}/><span>OU</span></label>
+        <label><input type="radio" name="keywordMode" value="AND" ${filters.keywordMode==="AND"?"checked":""}/><span>ET</span></label>
+      </div>
     </div>
-    <div class="contact-keyword-selected" data-contact-keyword-selected>
-      ${options.filter(word=>selected.has(word.id)).map(word=>`<label class="contact-keyword-pill" style="--keyword-color:${attr(word.color)}"><input type="checkbox" name="keywordIds" value="${attr(word.id)}" checked /><span>${text(word.label)}</span><span aria-hidden="true">×</span></label>`).join("")}
-      ${[...selected].filter(id=>!options.some(word=>word.id===id)).map(id=>`<label class="contact-keyword-pill"><input type="checkbox" name="keywordIds" value="${attr(id)}" checked /><span>${text(id)}</span><span aria-hidden="true">×</span></label>`).join("")}
-      ${!selected.size?'<small>Aucun mot-clé sélectionné.</small>':""}
+    <div class="contact-keyword-selected" data-contact-keyword-selected>${[...selected].map(id=>{
+      const word=options.find(item=>item.id===id)||{id,label:id,color:"#708199"};
+      return `<label class="contact-keyword-pill" style="--keyword-color:${attr(word.color)}"><input type="checkbox" name="keywordIds" value="${attr(word.id)}" checked /><span>${text(word.label)}</span><span aria-hidden="true">×</span></label>`;
+    }).join("")||'<span class="contact-keyword-placeholder">Aucun mot-clé sélectionné</span>'}</div>
+    <div class="contact-keyword-results" data-contact-keyword-results>
+    ${options.filter(word=>!selected.has(word.id)).map((word,i)=>`<label class="contact-keyword-option" data-contact-keyword-option data-keyword-search="${attr(normalizeName(word.label))}" ${i>=8?"hidden":""}>
+      <input type="checkbox" name="keywordIds" value="${attr(word.id)}" />
+      <span class="contact-keyword-swatch" style="background:${attr(word.color)}"></span>
+      <span class="contact-keyword-label">${text(word.label)}</span><small>${word.count}</small>
+    </label>`).join("")}
+    <p class="contact-keyword-no-match" data-contact-keyword-no-match hidden>Aucun résultat dans les mots-clés.</p></div>
+    <div class="contact-keyword-footer">
+      <button type="button" class="contact-keyword-expand" data-contact-keyword-expand ${options.length-selected.size<=8?"hidden":""}>Afficher tous les mots-clés ↓</button>
+      <button type="button" class="contact-keyword-new-toggle" data-contact-keyword-create aria-label="Créer le mot-clé saisi">+ Créer le mot-clé recherché</button>
     </div>
-    <div class="contact-keyword-mode" role="group" aria-label="Combiner les mots-clés">
-      <label><input type="radio" name="keywordMode" value="OR" ${filters.keywordMode!=="AND"?"checked":""}/> <strong>OU</strong> <small>Un seul suffit</small></label>
-      <label><input type="radio" name="keywordMode" value="AND" ${filters.keywordMode==="AND"?"checked":""}/> <strong>ET</strong> <small>Tous les mots-clés</small></label>
-    </div>
-    <div class="contact-keyword-options contact-keyword-results" data-contact-keyword-results>
-      ${listed.map(word=>`<label class="contact-keyword-option" data-contact-keyword-option data-keyword-search="${attr(normalizeName(word.label))}">
-        <input type="checkbox" name="keywordIds" value="${attr(word.id)}" />
-        <span class="contact-keyword-swatch" style="background:${attr(word.color)}"></span>
-        <span class="contact-keyword-label">${text(word.label)}</span>
-        <small>${word.count} contact(s)${word.legacy?" · historique":""}</small>
-      </label>`).join("")}
-      <p class="contact-keyword-no-match" data-contact-keyword-no-match hidden>Aucun mot-clé correspondant.</p>
-    </div>
-    <div class="contact-keyword-create">
-      <span>Mot-clé introuvable ?</span>
-      <button type="button" class="secondary-action compact" data-contact-keyword-create aria-label="Créer le mot-clé recherché">+ Créer le mot-clé saisi</button>
-      <small>Le créer l'ajoute au catalogue. Il ne sera associé à aucun contact automatiquement.</small>
-    </div>
-  </fieldset>`;
+  </section>`;
+}
+function renderContactTagEditor(contact={}) {
+  const choices=contactKeywordChoices();
+  const values=contactKeywordValues(contact);
+  const selected=new Set(values.map(slugify));
+  const chosen=values.filter((value,i)=>selected.has(slugify(value))&&values.findIndex(v=>slugify(v)===slugify(value))===i);
+  return `<section class="contact-tag-editor" data-contact-tag-editor>
+    <div class="contact-tag-header"><strong>Mots-clés du contact</strong><small>Ajoutez ou retirez des mots-clés en un clic.</small></div>
+    <input type="hidden" name="keywords" data-contact-tag-value value="${attr(chosen.join(", "))}" />
+    <div class="contact-tag-selected" data-contact-tag-selected>${chosen.map(label=>{
+      const word=choices.find(w=>w.id===slugify(label));
+      return `<button type="button" class="contact-tag-selected-pill" data-contact-tag-remove="${attr(slugify(label))}" style="--keyword-color:${attr(word?.color||"#708199")}" aria-label="Retirer ${attr(label)}">${text(word?.label||label)} <span aria-hidden="true">×</span></button>`;
+    }).join("")||'<span class="contact-tag-empty">Aucun mot-clé associé</span>'}</div>
+    <div class="contact-tag-search"><input type="search" data-contact-tag-query placeholder="Rechercher ou créer un mot-clé…" aria-label="Rechercher un mot-clé existant" autocomplete="off" /><button type="button" data-contact-tag-add-new class="secondary-action compact">+ Créer</button></div>
+    <div class="contact-tag-suggestions" data-contact-tag-suggestions>
+      ${choices.filter(word=>!selected.has(word.id)).map((word,i)=>`<button type="button" class="contact-tag-option" data-contact-tag-add="${attr(word.id)}" data-tag-search="${attr(normalizeName(word.label))}" ${i>=8?"hidden":""}><i style="background:${attr(word.color)}"></i>${text(word.label)}</button>`).join("")}
+      <span class="contact-tag-no-match" data-contact-tag-no-match hidden>Aucun mot-clé trouvé. Utilisez « Créer ».</span>
+    </div><button type="button" class="contact-tag-expand" data-contact-tag-expand ${choices.length-selected.size<=8?"hidden":""}>Voir tous les mots-clés ↓</button>
+    <p class="contact-tag-help">Les changements sur cette fiche sont enregistrés avec le bouton « Enregistrer ».</p>
+  </section>`;
 }
 
 function contactRuleMatch(contact,field,raw,op) {
@@ -3887,6 +3900,7 @@ function renderContactInput(field, contact = {}) {
   const name = attr(field.id);
   const required = field.required ? "required" : "";
   const fieldValue = Array.isArray(value) ? value.join(", ") : value;
+  if (field.id === "keywords") return renderContactTagEditor(contact);
   if (field.type === "textarea") return `<label>${text(field.label)}<textarea name="${name}" ${required}>${text(value || "")}</textarea></label>`;
   if (field.type === "date") return `<label>${text(field.label)}<input name="${name}" type="date" value="${attr(value || "")}" ${required} /></label>`;
   if (field.type === "number") return `<label>${text(field.label)}<input name="${name}" type="number" value="${attr(value || "")}" ${required} /></label>`;
@@ -6597,6 +6611,7 @@ function updateContact(id, form) {
   const data = new FormData(form);
   contactFields().filter((field) => field.id !== "id").forEach((field) => contact[field.id] = contactValueFromForm(data, field));
   synchronizeContactIdentity(contact);
+  registerContactKeywords(contact);
   const previousId = contact.id;
   assignUniqueContactId(contact, previousId);
   updateContactReferences(previousId, contact.id);
@@ -6639,6 +6654,7 @@ function createContact(form) {
     createdAt: now,
     updatedAt: now
   }, usedIds);
+  registerContactKeywords(contact);
   contactFields().filter((field) => !field.system).forEach((field) => {
     if (["id", "firstName", "lastName", "email", "city"].includes(field.id)) return;
     const value = contactValueFromForm(data, field);
@@ -8463,6 +8479,57 @@ async function updateUserRole(userId, role) {
 }
 
 
+function updateContactTagEditor(editor) {
+  const input=editor.querySelector("[data-contact-tag-value]");
+  const values=String(input?.value||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
+  const selected=new Set(values.map(slugify));
+  const choices=contactKeywordChoices();
+  const pills=editor.querySelector("[data-contact-tag-selected]");
+  if(pills)pills.innerHTML=values.map(value=>{
+    const word=choices.find(w=>w.id===slugify(value));
+    return '<button type="button" class="contact-tag-selected-pill" data-contact-tag-remove="'+attr(slugify(value))+'" style="--keyword-color:'+attr(word?.color||"#708199")+'" aria-label="Retirer '+attr(value)+'">'+text(word?.label||value)+' <span aria-hidden="true">×</span></button>';
+  }).join("")||'<span class="contact-tag-empty">Aucun mot-clé associé</span>';
+  const list=editor.querySelector("[data-contact-tag-suggestions]");
+  if(list)list.innerHTML=choices.filter(word=>!selected.has(word.id)).map((word,i)=>'<button type="button" class="contact-tag-option" data-contact-tag-add="'+attr(word.id)+'" data-tag-search="'+attr(normalizeName(word.label))+'" '+(i>=8?"hidden":"")+'><i style="background:'+attr(word.color)+'"></i>'+text(word.label)+'</button>').join("")+'<span class="contact-tag-no-match" data-contact-tag-no-match hidden>Aucun mot-clé trouvé. Utilisez « Créer ».</span>';
+  updateContactTagSuggestions(editor.querySelector("[data-contact-tag-query]"));
+}
+function updateContactTagSuggestions(input) {
+  if(!input)return;
+  const editor=input.closest("[data-contact-tag-editor]");
+  if(!editor)return;
+  const q=normalizeName(input.value);
+  const expanded=editor.dataset.expanded==="true";
+  let count=0,visible=0;
+  editor.querySelectorAll("[data-contact-tag-add]").forEach(row=>{
+    const match=!q||String(row.dataset.tagSearch||"").includes(q);
+    row.hidden=!match||(!q&&!expanded&&count++>=8);
+    if(!row.hidden)visible++;
+  });
+  const message=editor.querySelector("[data-contact-tag-no-match]");
+  if(message)message.hidden=visible>0;
+  const button=editor.querySelector("[data-contact-tag-add-new]");
+  if(button)button.disabled=!input.value.trim()||slugify(input.value)==="item"||input.value.trim().length>80;
+  const expand=editor.querySelector("[data-contact-tag-expand]");
+  if(expand){expand.hidden=!!q||editor.querySelectorAll("[data-contact-tag-add]").length<=8;expand.textContent=expanded?"Afficher moins ↑":"Voir tous les mots-clés ↓";}
+}
+function addContactTag(editor,label) {
+  const hidden=editor.querySelector("[data-contact-tag-value]");
+  if(!hidden)return;
+  const values=String(hidden.value||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
+  const id=slugify(label);
+  if(id==="item"||values.some(v=>slugify(v)===id))return;
+  hidden.value=[...values,label].join(", ");
+  const input=editor.querySelector("[data-contact-tag-query]");
+  if(input)input.value="";
+  editor.dataset.expanded="";
+  updateContactTagEditor(editor);
+}
+function registerContactKeywords(contact) {
+  const existing=new Set(normalizeKeywords(adminState.contactKeywords||[]).map(w=>slugify(w.id)));
+  const missing=contactKeywordValues(contact).filter(label=>!existing.has(slugify(label)));
+  if(missing.length)adminState.contactKeywords=normalizeKeywords([...(adminState.contactKeywords||[]),...missing.map(label=>({id:slugify(label),label,color:"#708199"}))]);
+}
+
 function applyContactKeywordForm(form) {
   const formData=new FormData(form);
   adminFilters.contacts={
@@ -8480,12 +8547,16 @@ function updateContactKeywordSuggestions(input) {
   const picker=input.closest(".contact-keyword-picker");
   if(!picker)return;
   const q=normalizeName(input.value);
-  let shown=0;
+  let shown=0,matched=0;
+  const expanded=picker.dataset.expanded==="true";
   picker.querySelectorAll("[data-contact-keyword-option]").forEach(row=>{
     const matches=!q||String(row.dataset.keywordSearch||"").includes(q);
-    row.hidden=!matches;
-    if(matches)shown++;
+    if(matches)matched++;
+    row.hidden=!matches||(!q&&!expanded&&shown>=8);
+    if(!row.hidden)shown++;
   });
+  const more=picker.querySelector("[data-contact-keyword-expand]");
+  if(more){more.hidden=!!q||matched<=8;more.textContent=expanded?"Afficher moins ↑":"Afficher tous les mots-clés ↓";}
   const noMatch=picker.querySelector("[data-contact-keyword-no-match]");
   if(noMatch)noMatch.hidden=shown>0;
   const button=picker.querySelector("[data-contact-keyword-create]");
@@ -8498,6 +8569,7 @@ function updateContactKeywordSuggestions(input) {
 }
 document.addEventListener("input",event=>{
   if(event.target.matches("[data-contact-keyword-query]"))updateContactKeywordSuggestions(event.target);
+  if(event.target.matches("[data-contact-tag-query]"))updateContactTagSuggestions(event.target);
 });
 document.addEventListener("change",event=>{
   if(!event.target.matches('.contact-keyword-picker input[name="keywordIds"], .contact-keyword-picker input[name="keywordMode"]'))return;
@@ -9214,6 +9286,38 @@ document.addEventListener("click", async (event) => {
   }
   const hideCriterion=event.target.closest("[data-contact-hide-field]");
   if(hideCriterion){const id=hideCriterion.dataset.contactHideField;const row=hideCriterion.closest("[data-contact-field-row]");if(row){row.querySelectorAll("input,select").forEach(el=>{if(el.name==="op_"+id)el.value="contains";else el.value="";});row.hidden=true;}return;}
+  const tagEditor=event.target.closest("[data-contact-tag-editor]");
+  const tagAdd=event.target.closest("[data-contact-tag-add]");
+  if(tagEditor&&tagAdd){
+    const choice=contactKeywordChoices().find(word=>word.id===tagAdd.dataset.contactTagAdd);
+    if(choice)addContactTag(tagEditor,choice.label);
+    return;
+  }
+  const tagRemove=event.target.closest("[data-contact-tag-remove]");
+  if(tagEditor&&tagRemove){
+    const hidden=tagEditor.querySelector("[data-contact-tag-value]");
+    if(hidden)hidden.value=String(hidden.value||"").split(/[,;]/).map(v=>v.trim()).filter(v=>v&&slugify(v)!==tagRemove.dataset.contactTagRemove).join(", ");
+    updateContactTagEditor(tagEditor);
+    return;
+  }
+  if(event.target.closest("[data-contact-tag-expand]")&&tagEditor){
+    tagEditor.dataset.expanded=tagEditor.dataset.expanded==="true"?"false":"true";
+    updateContactTagSuggestions(tagEditor.querySelector("[data-contact-tag-query]"));
+    return;
+  }
+  if(event.target.closest("[data-contact-tag-add-new]")&&tagEditor){
+    const input=tagEditor.querySelector("[data-contact-tag-query]");
+    const label=String(input?.value||"").trim().replace(/\\s+/g," ").slice(0,80);
+    if(!label||slugify(label)==="item")return;
+    const old=contactKeywordChoices().find(word=>word.id===slugify(label));
+    addContactTag(tagEditor,old?.label||label);
+    return;
+  }
+  if(event.target.closest("[data-contact-keyword-expand]")){
+    const picker=event.target.closest(".contact-keyword-picker");
+    if(picker){picker.dataset.expanded=picker.dataset.expanded==="true"?"false":"true";updateContactKeywordSuggestions(picker.querySelector("[data-contact-keyword-query]"));}
+    return;
+  }
   const createContactKeyword=event.target.closest("[data-contact-keyword-create]");
   if(createContactKeyword){
     const picker=createContactKeyword.closest(".contact-keyword-picker");
