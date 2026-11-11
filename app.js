@@ -6115,46 +6115,65 @@ function renderAddons() {
   </div>`;
 }
 
-function renderActivity() {
-  const taskAlerts = assignedTaskNotifications();
-  const now = Date.now();
-  const weekStart = now - 7 * 86400000;
-  const monthStart = now - 30 * 86400000;
+
+const activityUi = { days: "30", member: "all", search: "", page: 1 };
+function activityMemberName(user) {
+  return [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.login || user.email || "Membre du staff";
+}
+function activityDataset() {
   const staff = new Map();
   for (const user of [...(state.users || []), ...(adminUsersLoaded ? adminUsers : [])]) {
-    if (!user?.id || roleRank(user.role) < roleRank("moderator")) continue;
-    staff.set(String(user.id), user);
+    if (user && user.id && roleRank(user.role) >= roleRank("moderator")) staff.set(String(user.id), user);
   }
-  const records = (adminState.activityLog || []).filter((item) => Number.isFinite(Date.parse(item.createdAt || "")))
-    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
-  const byUser = new Map();
-  for (const record of records) {
-    const id = String(record.userId || "");
-    if (!staff.has(id)) continue;
-    if (!byUser.has(id)) byUser.set(id, []);
-    byUser.get(id).push(record);
-  }
-  const memberCards = [...staff.values()].map((user) => {
-    const actions = byUser.get(String(user.id)) || [];
-    const lastWeek = actions.filter((item) => Date.parse(item.createdAt) >= weekStart && Date.parse(item.createdAt) <= now);
-    const lastMonth = actions.filter((item) => Date.parse(item.createdAt) >= monthStart && Date.parse(item.createdAt) <= now);
-    const label = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.login || user.email || "Membre du staff";
-    return { user, label, lastWeek, lastMonth };
-  }).sort((a, b) => b.lastMonth.length - a.lastMonth.length || a.label.localeCompare(b.label, "fr"));
-  const totalWeek = memberCards.reduce((total, member) => total + member.lastWeek.length, 0);
-  const totalMonth = memberCards.reduce((total, member) => total + member.lastMonth.length, 0);
-  return `<div class="notification-center">
-    ${taskAlerts.length ? `<section class="assigned-task-alerts"><header><h2>Mes notifications</h2><p>Ces alertes restent visibles jusqu'a ce que les taches soient terminees.</p></header>${taskAlerts.map((alert) => `<button type="button" data-open-permanence="${attr(alert.requestId)}"><span>!</span><div><strong>${text(alert.title)}</strong><p>${text(alert.message)}</p><small>${text(alert.dueDate ? `Echeance : ${formatDate(alert.dueDate)}` : "Sans echeance")}</small></div></button>`).join("")}</section>` : `<section class="assigned-task-alerts is-empty"><h2>Mes notifications</h2><p>Aucune tache en attente ne vous est attribuee.</p></section>`}
-    <section class="admin-panel"><h2>Activité des membres du staff</h2><p>Actions enregistrées sur les 7 et 30 derniers jours (périodes glissantes). Le détail est masqué par défaut.</p><p><strong>${totalWeek} action(s) sur 7 jours</strong> · <strong>${totalMonth} action(s) sur 30 jours</strong></p><small>Les compteurs portent sur l'historique encore conservé par le site ; ils ne représentent pas nécessairement toutes les tâches réalisées hors du site.</small></section>
-    <section class="admin-table">${memberCards.map(({ user, label, lastWeek, lastMonth }) => `
-      <details class="admin-row staff-activity-detail">
-        <summary><strong>${text(label)}</strong> · ${text(roleLabel(user.role))} — <strong>${lastWeek.length}</strong> sur 7 jours · <strong>${lastMonth.length}</strong> sur 30 jours <span>▾ Voir les actions</span></summary>
-        <div><h4>Actions des 30 derniers jours (${lastMonth.length})</h4>${lastMonth.length ? lastMonth.map(renderActivityRow).join("") : "<p>Aucune action enregistrée sur cette période.</p>"}</div>
-      </details>`).join("") || empty("Aucun membre du staff trouvé.")}
-    </section>
-  </div>`;
+  const records = (adminState.activityLog || []).filter(item => Number.isFinite(Date.parse(item.createdAt || "")) && staff.has(String(item.userId || "")))
+    .sort((a,b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return { staff, records };
 }
-
+function activityFiltered(records) {
+  const now = Date.now(), min = activityUi.days === "all" ? -Infinity : now - Number(activityUi.days) * 86400000;
+  const q = activityUi.search.trim().toLocaleLowerCase("fr");
+  return records.filter(item => {
+    const t = Date.parse(item.createdAt);
+    return t >= min && t <= now && (activityUi.member === "all" || String(item.userId) === activityUi.member)
+      && (!q || [item.action,item.target,item.detail,item.userName].some(v => String(v || "").toLocaleLowerCase("fr").includes(q)));
+  });
+}
+function activityHistoryRow(item) {
+  const d = new Date(item.createdAt);
+  const date = d.toLocaleString("fr-FR", {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+  return '<article class="activity-entry"><span class="activity-entry-symbol" aria-hidden="true">↗</span><div><header><strong>'+text(item.action || "Action")+'</strong><time datetime="'+attr(item.createdAt)+'">'+text(date)+'</time></header><p>'+text(item.target || "Élément non renseigné")+'</p>'+(item.detail ? '<small>'+text(item.detail)+'</small>' : '')+'<span class="activity-entry-by">'+text(item.userName || "Système")+'</span></div></article>';
+}
+function renderActivity() {
+  const data = activityDataset(), now = Date.now(), week = now - 7*86400000, month = now - 30*86400000;
+  const members = [...data.staff.values()].map(user => {
+    const actions = data.records.filter(item => String(item.userId) === String(user.id));
+    return {user, label:activityMemberName(user), actions,
+      week:actions.filter(item => Date.parse(item.createdAt)>=week).length,
+      month:actions.filter(item => Date.parse(item.createdAt)>=month).length};
+  }).sort((a,b)=>b.month-a.month || a.label.localeCompare(b.label,"fr"));
+  const totalWeek=members.reduce((sum,m)=>sum+m.week,0), totalMonth=members.reduce((sum,m)=>sum+m.month,0);
+  const max=Math.max(1,...members.map(m=>m.month)), filtered=activityFiltered(data.records);
+  const pages=Math.max(1,Math.ceil(filtered.length/25));
+  activityUi.page=Math.max(1,Math.min(pages,activityUi.page));
+  const pageRows=filtered.slice((activityUi.page-1)*25,activityUi.page*25);
+  const opts=(value,label,active)=>'<option value="'+attr(value)+'" '+(value===active?'selected':'')+'>'+text(label)+'</option>';
+  const cards=members.map(m=>{
+    const initials=m.label.split(" ").slice(0,2).map(s=>s[0]||"").join("").toUpperCase();
+    const entries=m.actions.filter(item=>Date.parse(item.createdAt)>=month).slice(0,10);
+    return '<details class="activity-person"><summary><span class="activity-avatar">'+text(initials)+'</span><span class="activity-person-title"><strong>'+text(m.label)+'</strong><small>'+text(roleLabel(m.user.role))+'</small></span><span class="activity-person-score"><strong>'+m.month+'</strong><small>30 jours</small></span><span class="activity-person-bar"><i style="width:'+Math.round(m.month/max*100)+'%"></i></span><span class="activity-person-week">'+m.week+' action(s) sur 7 jours</span></summary><div class="activity-person-body"><button type="button" data-activity-select-member="'+attr(m.user.id)+'">Afficher toutes ses actions ↓</button>'+(entries.map(activityHistoryRow).join("") || '<p>Aucune action sur 30 jours.</p>')+'</div></details>';
+  }).join("");
+  const alerts=assignedTaskNotifications();
+  return '<div class="activity-dashboard">'
+    +'<header class="activity-banner"><div><span>GESTION DE L’ÉQUIPE</span><h2>Historique d’activité</h2><p>Une vision claire des opérations enregistrées et de leur répartition entre collaborateurs.</p></div><button type="button" data-activity-csv '+(!filtered.length?'disabled':'')+'>Exporter CSV ↓</button></header>'
+    +'<section class="activity-stats"><article><span>7 derniers jours</span><strong>'+totalWeek+'</strong><small>actions</small></article><article><span>30 derniers jours</span><strong>'+totalMonth+'</strong><small>actions</small></article><article><span>Collaborateurs</span><strong>'+members.length+'</strong><small>comptes staff</small></article><article><span>Historique conservé</span><strong>'+data.records.length+'</strong><small>entrées consultables</small></article></section>'
+    +(alerts.length?'<details class="activity-alerts"><summary>Mes tâches en attente ('+alerts.length+')</summary>'+alerts.map(a=>'<button type="button" data-open-permanence="'+attr(a.requestId)+'">'+text(a.title)+'</button>').join("")+'</details>':'')
+    +'<section class="activity-panel"><header><div><h3>Activité par collaborateur</h3><p>Comparaison sur 30 jours. Ouvrez une fiche pour voir les dernières actions.</p></div></header><div class="activity-people">'+(cards||'<p>Aucun membre du staff.</p>')+'</div></section>'
+    +'<section class="activity-panel" id="activity-journal"><header><div><h3>Journal des opérations</h3><p>Recherchez et filtrez les actions enregistrées.</p></div><b>'+filtered.length+' résultat(s)</b></header>'
+    +'<div class="activity-filters"><label>Rechercher<input data-activity-search type="search" value="'+attr(activityUi.search)+'" placeholder="Action, dossier, description…"></label><label>Collaborateur<select data-activity-member>'+opts("all","Toute l’équipe",activityUi.member)+members.map(m=>opts(String(m.user.id),m.label,activityUi.member)).join("")+'</select></label><label>Période<select data-activity-days>'+opts("7","7 derniers jours",activityUi.days)+opts("30","30 derniers jours",activityUi.days)+opts("all","Tout l’historique",activityUi.days)+'</select></label><button type="button" data-activity-reset>Effacer les filtres</button></div>'
+    +'<div class="activity-entries">'+(pageRows.map(activityHistoryRow).join("")||'<div class="activity-empty"><strong>Aucun résultat</strong><p>Modifiez vos filtres pour retrouver des actions.</p></div>')+'</div>'
+    +(pages>1?'<nav class="activity-pages"><span>Page '+activityUi.page+' / '+pages+'</span><div><button data-activity-page="'+(activityUi.page-1)+'" '+(activityUi.page===1?'disabled':'')+'>← Précédent</button><button data-activity-page="'+(activityUi.page+1)+'" '+(activityUi.page===pages?'disabled':'')+'>Suivant →</button></div></nav>':'')+'</section>'
+    +'<p class="activity-disclaimer">Les chiffres représentent uniquement les opérations enregistrées par le site. Le journal est actuellement limité aux 600 dernières entrées : ces compteurs ne mesurent pas l’intégralité du travail réalisé.</p></div>';
+}
 function assignedTaskNotifications() {
   return adminState.teamTasks.filter((task) => task.assignedTo === currentUserId && task.linkedRequestId && !["termine", "archive"].includes(task.status)).sort((a, b) => String(a.dueDate || "9999-12-31").localeCompare(String(b.dueDate || "9999-12-31"))).map((task) => ({ id: `task-alert-${task.id}`, title: task.title, message: adminState.permanenceRequests.find((item) => item.id === task.linkedRequestId)?.title || "Dossier local", requestId: task.linkedRequestId, dueDate: task.dueDate }));
 }
@@ -10415,3 +10434,36 @@ loadPublicStateFromApi().finally(() => {
   startStateSynchronization();
 });
 loadCommunesMap();
+
+
+let activitySearchTimeout;
+document.addEventListener("change", event => {
+  if (event.target.matches("[data-activity-member]")) { activityUi.member=event.target.value; activityUi.page=1; renderAdmin(); }
+  if (event.target.matches("[data-activity-days]")) { activityUi.days=event.target.value; activityUi.page=1; renderAdmin(); }
+});
+document.addEventListener("input", event => {
+  if (!event.target.matches("[data-activity-search]")) return;
+  activityUi.search=event.target.value; activityUi.page=1;
+  clearTimeout(activitySearchTimeout);
+  activitySearchTimeout=setTimeout(()=>{
+    const start=event.target.selectionStart;
+    renderAdmin();
+    const field=document.querySelector("[data-activity-search]");
+    if(field){field.focus();try{field.setSelectionRange(start,start);}catch(_){}}
+  },220);
+});
+document.addEventListener("click", event => {
+  const member=event.target.closest("[data-activity-select-member]");
+  if(member){activityUi.member=member.dataset.activitySelectMember;activityUi.days="30";activityUi.page=1;renderAdmin();document.querySelector("#activity-journal")?.scrollIntoView({behavior:"smooth"});return;}
+  if(event.target.closest("[data-activity-reset]")){activityUi.member="all";activityUi.days="30";activityUi.search="";activityUi.page=1;renderAdmin();return;}
+  const page=event.target.closest("[data-activity-page]");
+  if(page&&!page.disabled){activityUi.page=Number(page.dataset.activityPage)||1;renderAdmin();document.querySelector("#activity-journal")?.scrollIntoView({behavior:"smooth"});return;}
+  if(event.target.closest("[data-activity-csv]")){
+    const {staff,records}=activityDataset(), rows=activityFiltered(records);
+    const cell=value=>'"'+String(value??"").replace(/^[\s]*[=+\-@]/,"'$&").replace(/"/g,'""')+'"';
+    const data=[["Date","Collaborateur","Action","Élément","Détail"],...rows.map(r=>[r.createdAt,activityMemberName(staff.get(String(r.userId))||{}),r.action,r.target,r.detail])];
+    const blob=new Blob(["\uFEFF"+data.map(row=>row.map(cell).join(";")).join("\r\n")],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download="historique-"+new Date().toISOString().slice(0,10)+".csv";document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
+});
