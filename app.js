@@ -3329,8 +3329,10 @@ function contactFilterKey(field) {
 
 // Unified keyword index: administrative catalogue and historical contact tags.
 function contactKeywordValues(contact = {}) {
-  const raw = contact.keywords ?? contact.tags ?? [];
-  const values = Array.isArray(raw) ? raw : String(raw || "").split(/[,;\\n]/);
+  const primary = contact.keywords;
+  const legacy = contact.tags;
+  const unpack = raw => Array.isArray(raw) ? raw : String(raw || "").split(/[,;]/);
+  const values = [...unpack(primary), ...unpack(legacy)];
   return values.map(value => typeof value === "object" && value !== null
     ? String(value.label || value.name || value.id || "").trim()
     : String(value ?? "").trim()).filter(Boolean);
@@ -8488,7 +8490,8 @@ function updateContactKeywordSuggestions(input) {
   if(noMatch)noMatch.hidden=shown>0;
   const button=picker.querySelector("[data-contact-keyword-create]");
   if(button){
-    const exists=contactKeywordChoices().some(word=>word.id===slugify(input.value));
+    const id=slugify(input.value);
+    const exists=[...picker.querySelectorAll('input[name="keywordIds"]')].some(el=>el.value===id);
     button.disabled=!input.value.trim()||exists||input.value.trim().length>80;
     button.textContent=input.value.trim()?'+ Créer « '+input.value.trim().slice(0,80)+' »':'+ Créer le mot-clé saisi';
   }
@@ -9215,7 +9218,7 @@ document.addEventListener("click", async (event) => {
   if(createContactKeyword){
     const picker=createContactKeyword.closest(".contact-keyword-picker");
     const input=picker?.querySelector("[data-contact-keyword-query]");
-    const label=String(input?.value||"").trim().replace(/\\s+/g," ").slice(0,80);
+    const label=String(input?.value||"").trim().replace(/\s+/g," ").slice(0,80);
     const id=slugify(label);
     if(!label||id==="item")return;
     const existing=contactKeywordChoices().find(item=>item.id===id);
