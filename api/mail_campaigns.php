@@ -73,12 +73,21 @@ function mailer_match(array $contact, array $filters, array $fields): bool {
         }
     }
     if ($wanted) {
-        $source = $contact['keywords'] ?? [];
-        $actual = is_array($source) ? $source : preg_split('/[,;]/', (string)$source);
+        // Même source que la recherche du navigateur : mots-clés récents et tags hérités.
+        $actual = [];
+        foreach (['keywords', 'tags'] as $sourceKey) {
+            $source = $contact[$sourceKey] ?? [];
+            $values = is_array($source) ? $source : preg_split('/[,;]/', (string)$source);
+            foreach ($values as $entry) {
+                if (is_array($entry)) {
+                    $entry = $entry['label'] ?? $entry['name'] ?? $entry['id'] ?? '';
+                }
+                if (is_scalar($entry)) $actual[] = (string)$entry;
+            }
+        }
         $available = [];
         foreach ($actual as $word) {
-            if (!is_scalar($word)) continue;
-            $key = mailer_keyword_id((string)$word);
+            $key = mailer_keyword_id($word);
             if ($key !== '') $available[$key] = true;
         }
         $matchCount = count(array_intersect_key($wanted, $available));
