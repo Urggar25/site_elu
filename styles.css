@@ -11627,3 +11627,17 @@ body.admin-mode .contact-search-page .saved-contact-searches-list {max-height:65
   body.admin-mode .contact-search-quick-actions>button {flex:1 1 100%}
   body.admin-mode .contact-saved-popover {width:calc(100vw - 36px)}
 }
+
+/* Universal contact search and compact refinements */
+body.admin-mode .contact-universal-search {display:grid;gap:7px;max-width:100%}
+body.admin-mode .contact-universal-search>label {font-size:.83rem;font-weight:800;color:var(--admin-ink)}
+body.admin-mode .contact-universal-input {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+body.admin-mode .contact-universal-input input {width:100%;box-sizing:border-box;min-width:0;min-height:48px;padding:0 16px;border:1px solid #bfcadc;border-radius:9px;font-size:1rem;background:#fff}
+body.admin-mode .contact-universal-input button {margin:0;min-height:48px;padding-inline:22px}
+body.admin-mode .contact-quick-help {grid-column:1/-1;color:#6c7b91;font-size:.78rem}
+@media(max-width:760px){
+body.admin-mode .contact-universal-input {grid-template-columns:1fr}
+body.admin-mode .contact-universal-input button {width:100%}
+body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-search-panel {display:none}
+body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-split {margin-top:0}
+}
