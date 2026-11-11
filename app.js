@@ -3846,8 +3846,8 @@ function renderSavedContactSearches({ standalone = false } = {}) {
              <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
              <button type="button" data-list-rename="${attr(item.id)}">Renommer</button>
              <button type="button" data-list-duplicate="${attr(item.id)}">Dupliquer</button>
-             ${item.isSnapshot?'':`<button type="button" data-list-edit="${attr(item.id)}">Modifier la liste</button>`}
-             ${!item.sourceIds?.length&&!item.isSnapshot?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
+             ${item.isSnapshot||item.listType==="dynamic"&&!item.sourceIds?.length?'':`<button type="button" data-list-edit="${attr(item.id)}">Modifier la liste</button>`}
+             ${!item.sourceIds?.length&&!item.isSnapshot&&item.listType==="dynamic"?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
              <button type="button" class="danger" data-contact-delete-search="${attr(item.id)}">Supprimer la recherche</button>
            </div>
          </details>
@@ -4985,11 +4985,13 @@ function renderContactImportLoading() {
 }
 
 function renderContactForm(contact) {
+  const editableLists=normalizeSavedContactSearches(adminState.savedContactSearches).filter(item=>["manual","hybrid"].includes(item.listType));
+  const listAccess=editableLists.length?`<div class="contact-add-to-list"><label>Ajouter à une liste<select data-contact-add-list><option value="">Choisir une liste…</option>${editableLists.map(item=>`<option value="${attr(item.id)}">${text(item.name)}</option>`).join("")}</select></label><button type="button" class="secondary-action compact" data-contact-add-to-list="${attr(contact.id)}">Ajouter</button></div>`:"";
   const localCases = adminState.permanenceRequests.filter((item) => item.contactId === contact.id);
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
   const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
   const campaignLinks = (adminState.campaignEvents || []).filter((item) => item.participants?.some((participant) => participant.contactId === contact.id)).map((item) => `<button type="button" data-open-contact-campaign-event="${attr(item.id)}">🎟 ${text(formatDate(item.startAt))} — ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}${contact.institutionId ? `<div class="contact-institution-link"><strong>Institution associée :</strong> <button type="button" data-admin-section="institutions">Voir les institutions</button></div>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}${contact.institutionId ? `<div class="contact-institution-link"><strong>Institution associée :</strong> <button type="button" data-admin-section="institutions">Voir les institutions</button></div>` : ""}${listAccess}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
@@ -8784,6 +8786,12 @@ document.addEventListener("keydown",event=>{
     else picker.querySelector("[data-contact-keyword-create]")?.click();
   }
 });
+document.addEventListener("input",event=>{
+  if(event.target.matches("[data-list-contact-query]"))updateSavedListContactSuggestions(event.target);
+});
+document.addEventListener("change",event=>{
+  if(event.target.matches('[data-saved-list-builder] select, [data-saved-list-builder] input[name="sourceIds"]'))refreshSavedListBuilder(event.target.closest("[data-saved-list-builder]"));
+});
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
@@ -9544,6 +9552,45 @@ document.addEventListener("click", async (event) => {
     showToast("Mot-clé « "+label+" » ajouté au catalogue et à la recherche.");
     return;
   }
+  const formBuilder=event.target.closest("[data-saved-list-builder]");
+  if(formBuilder){
+    const add=event.target.closest("[data-list-add-member]");
+    if(add){addSavedListMember(formBuilder,add.dataset.listAddMember,add.dataset.listKind);return;}
+    const remove=event.target.closest("[data-list-remove-member]");
+    if(remove){remove.closest("[data-list-member]")?.remove();refreshSavedListBuilder(formBuilder);return;}
+    if(event.target.closest("[data-list-refresh-preview]")){refreshSavedListBuilder(formBuilder);return;}
+  }
+  const contactListAdd=event.target.closest("[data-contact-add-to-list]");
+  if(contactListAdd){
+    const listId=contactListAdd.closest(".contact-add-to-list")?.querySelector("[data-contact-add-list]")?.value;
+    if(!listId){showToast("Choisissez une liste.");return;}
+    addContactToSavedList(contactListAdd.dataset.contactAddToList,listId);return;
+  }
+  const editList=event.target.closest("[data-list-edit]");
+  if(editList){savedListEditorId=editList.dataset.listEdit;activeAdminSection="saved-contact-searches";renderAdmin();document.querySelector("[data-saved-list-builder]")?.scrollIntoView({block:"start",behavior:"smooth"});return;}
+  if(event.target.closest("[data-list-cancel-edit]")){savedListEditorId="";renderAdmin();return;}
+  const renameList=event.target.closest("[data-list-rename]");
+  if(renameList){
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+    const item=searches.find(x=>x.id===renameList.dataset.listRename);
+    if(!item)return;
+    const name=prompt("Nouveau nom de la liste",item.name);
+    if(name===null)return;
+    const clean=String(name).trim().slice(0,120);
+    if(!clean){showToast("Saisissez un nom valide.");return;}
+    adminState.savedContactSearches=searches.map(x=>x.id===item.id?{...x,name:clean,updatedAt:new Date().toISOString()}:x);
+    saveAdminState("modification","recherche contact enregistree",clean);return;
+  }
+  const duplicateList=event.target.closest("[data-list-duplicate]");
+  if(duplicateList){
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+    const item=searches.find(x=>x.id===duplicateList.dataset.listDuplicate);
+    if(!item)return;
+    const now=new Date().toISOString();
+    const copy={...item,id:crypto.randomUUID(),name:(item.name+" — copie").slice(0,120),createdAt:now,updatedAt:now,createdBy:currentUserId,favorite:false};
+    adminState.savedContactSearches=[copy,...searches];
+    saveAdminState("creation","recherche contact enregistree",copy.name);return;
+  }
   const contactSaveSearch = event.target.closest("[data-contact-save-search]");
   if (contactSaveSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
@@ -9865,6 +9912,7 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  if(form.matches("[data-saved-list-builder]")){event.preventDefault();saveSpecialContactList(form);return;}
   const filter = form.closest("[data-admin-filter]");
   if (filter) {
     event.preventDefault();
