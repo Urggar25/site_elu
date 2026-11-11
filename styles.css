@@ -11531,3 +11531,113 @@ body.admin-mode .institution-edit label { display: grid; gap: 5px; font-size: .8
 body.admin-mode .institution-edit input { min-height: 38px; padding: 8px 10px; border: 1px solid #ccd8e9; border-radius: 6px; }
 body.admin-mode .institutions-page details { margin-top: 18px; padding: 14px; border: 1px solid #d9e4f2; border-radius: 9px; }
 body.admin-mode .institutions-page summary { font-weight: 750; cursor: pointer; }
+
+/* Advanced contact search */
+.contact-rule-field{display:flex;gap:.5rem;align-items:end;min-width:0}.contact-rule-field>select{max-width:11rem;flex:0 0 auto}.contact-rule-field>label{flex:1;min-width:0}.contact-advanced-filters{border:1px solid var(--border-color,#c8d0db);border-radius:12px;padding:12px;margin:12px 0}.contact-advanced-filters legend{padding:0 8px;font-weight:600}@media(max-width:700px){.contact-rule-field{flex-wrap:wrap}.contact-rule-field>select{max-width:100%;width:100%}}
+
+
+/* UI/UX contact search refresh — progressive disclosure, clear hierarchy */
+body.admin-mode .contact-search-panel {display:grid; gap:14px; padding:clamp(14px,2.2vw,24px)}
+body.admin-mode .contact-search-primary-actions {display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:stretch}
+body.admin-mode .contact-search-main {grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:12px}
+body.admin-mode .contact-search-main .contact-search-field {min-width:0}
+body.admin-mode .contact-search-main .contact-search-field input {width:100%;box-sizing:border-box}
+body.admin-mode .contact-dynamic-search {width:100%;grid-column:auto;overflow:visible}
+body.admin-mode .contact-dynamic-search>summary {padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer}
+body.admin-mode .contact-dynamic-search>summary strong {font-size:.91rem}
+body.admin-mode .contact-advanced-workspace {display:grid;gap:18px;padding:16px;background:#fff}
+body.admin-mode .contact-guidance {margin:0;color:#56667d;font-size:.86rem;line-height:1.5}
+body.admin-mode .contact-primary-operators {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:end}
+body.admin-mode .contact-primary-operators>span {grid-column:1/-1;font-weight:750;color:#34445e;font-size:.83rem}
+body.admin-mode .contact-primary-operators label {display:grid;gap:5px;font-size:.82rem}
+body.admin-mode .contact-primary-operators select {width:100%;min-height:40px}
+body.admin-mode .contact-advanced-workspace .contact-advanced-filters {margin:0;padding:12px}
+body.admin-mode .contact-advanced-workspace .contact-filter-grid {margin:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+body.admin-mode .contact-criteria-heading {display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+body.admin-mode .contact-add-field {display:grid;gap:4px;font-weight:700;font-size:.82rem}
+body.admin-mode .contact-add-field select {min-width:185px}
+body.admin-mode .contact-criteria-list .contact-rule-field[hidden] {display:none!important}
+body.admin-mode .contact-rule-field {border:1px solid #dce5f1;background:#f7f9fd;border-radius:10px;padding:10px;min-width:0}
+body.admin-mode .contact-rule-controls {display:grid;grid-template-columns:minmax(115px,.6fr) minmax(0,1fr) auto;gap:8px;align-items:end;width:100%}
+body.admin-mode .contact-rule-controls>select {width:100%;max-width:none;min-height:40px}
+body.admin-mode .contact-rule-controls>label {min-width:0;display:grid;gap:5px}
+body.admin-mode .contact-rule-controls input,body.admin-mode .contact-rule-controls label>select {width:100%;box-sizing:border-box}
+body.admin-mode .contact-criterion-remove {width:38px;min-width:38px;height:40px;border-radius:8px;border:1px solid #d3ddec;background:white;color:#8f3041;font-size:1.25rem;cursor:pointer}
+body.admin-mode .contact-criterion-remove:hover {background:#fff1f3}
+body.admin-mode .contact-advanced-workspace .contact-keyword-search {max-height:320px;overflow:auto;margin:0;border:1px solid #dce5f1;padding:12px;border-radius:10px}
+body.admin-mode .contact-advanced-workspace .contact-filter-actions {padding:12px 0 0;background:transparent}
+body.admin-mode .contact-active-filters {display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+body.admin-mode .contact-chip-heading {font-size:.78rem;font-weight:800;color:#475b75;margin-right:4px}
+body.admin-mode .contact-filter-chip {display:inline-flex;gap:8px;align-items:center;max-width:100%;min-height:32px;padding:5px 10px;border:1px solid #bcd0e9;border-radius:99px;background:#edf4ff;color:#254b80;font-size:.8rem;font-weight:650;cursor:pointer;overflow-wrap:anywhere}
+body.admin-mode .contact-filter-chip:hover {border-color:#5383c6;background:#dfeefe}
+body.admin-mode .contact-filter-chip span {font-size:1.05rem;line-height:1}
+body.admin-mode .contact-filter-clear {border:0;background:transparent;text-decoration:underline;color:#57667b;cursor:pointer;font-size:.82rem}
+body.admin-mode .contact-filter-empty {margin:0;color:#65758a;font-size:.8rem}
+body.admin-mode .contact-search-quick-actions {display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+body.admin-mode .contact-current-search {font-size:.8rem;color:#295e9c;font-weight:750}
+body.admin-mode .contact-selection-toolbar {display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+body.admin-mode .contact-selection-toolbar strong {flex-basis:100%}
+body.admin-mode .contact-mobile-back {display:none}
+body.admin-mode .saved-contact-search-item {display:grid;grid-template-columns:auto minmax(0,1fr) 38px 42px;align-items:center;gap:8px;position:relative;padding:8px 10px;min-width:0}
+body.admin-mode .saved-contact-search-load {min-width:0;overflow:hidden}
+body.admin-mode .saved-contact-search-load strong {text-overflow:ellipsis;overflow:hidden;white-space:nowrap;overflow-wrap:normal}
+body.admin-mode .saved-contact-search-load small {font-size:.75rem;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.admin-mode .saved-search-favorite {border:0;background:transparent;color:#a97717;font-size:1.3rem;min-height:40px;cursor:pointer}
+body.admin-mode .saved-search-more {position:relative}
+body.admin-mode .saved-search-more summary {display:grid;place-items:center;min-height:40px;min-width:40px;border:1px solid #d5dfeb;border-radius:8px;cursor:pointer;list-style:none;font-size:1.25rem;background:#f7f9fc}
+body.admin-mode .saved-search-more summary::-webkit-details-marker {display:none}
+body.admin-mode .saved-search-actions {position:absolute;right:0;top:calc(100% + 5px);z-index:40;display:grid;gap:3px;min-width:200px;padding:7px;background:#fff;border:1px solid #cbd7e7;border-radius:10px;box-shadow:0 10px 25px rgba(20,35,55,.19)}
+body.admin-mode .saved-search-actions button {width:100%;text-align:left;min-height:37px;border:0;background:transparent;padding:8px 10px;border-radius:6px;color:#293b53;cursor:pointer}
+body.admin-mode .saved-search-actions button:hover {background:#f0f5fc}
+body.admin-mode .saved-search-actions button.danger {color:#ab243c}
+body.admin-mode .saved-search-combine {display:flex;align-items:end;gap:8px;flex-wrap:wrap;margin-top:12px}
+body.admin-mode .saved-search-combine label {display:grid;gap:4px;font-size:.81rem}
+body.admin-mode .saved-search-combine button {min-height:40px}
+body.admin-mode .contact-saved-popover {width:min(560px,calc(100vw - 48px))}
+body.admin-mode .contact-saved-popover .saved-contact-searches-list {max-height:45vh}
+body.admin-mode .contact-search-page .saved-contact-searches-list {max-height:65vh}
+@media(max-width:900px) {
+  body.admin-mode .contact-search-main {grid-template-columns:repeat(2,minmax(0,1fr))}
+  body.admin-mode .contact-search-main>button {grid-column:1/-1}
+  body.admin-mode .contact-advanced-workspace .contact-filter-grid {grid-template-columns:1fr}
+}
+@media(max-width:760px) {
+  body.admin-mode .contact-search-main {grid-template-columns:1fr}
+  body.admin-mode .contact-search-main>button {grid-column:1}
+  body.admin-mode .contact-advanced-workspace {padding:12px;gap:14px}
+  body.admin-mode .contact-primary-operators {grid-template-columns:1fr}
+  body.admin-mode .contact-criteria-heading {display:grid}
+  body.admin-mode .contact-criteria-heading .contact-add-field {min-width:0}
+  body.admin-mode .contact-rule-controls {grid-template-columns:1fr auto}
+  body.admin-mode .contact-rule-controls>select {grid-column:1/-1}
+  body.admin-mode .contact-rule-controls>label {grid-column:1}
+  body.admin-mode .contact-rule-controls>.contact-criterion-remove {grid-column:2}
+  body.admin-mode .contact-search-page .contact-split .contact-sticky-detail {display:none}
+  body.admin-mode .contact-search-page .contact-split.mobile-detail-open .contact-result-list {display:none}
+  body.admin-mode .contact-search-page .contact-split.mobile-detail-open .contact-sticky-detail {display:block}
+  body.admin-mode .contact-search-page .contact-mobile-back {display:inline-flex;margin-bottom:12px;min-height:44px}
+  body.admin-mode .saved-contact-search-item {display:grid;grid-template-columns:auto minmax(0,1fr) 36px 40px}
+  body.admin-mode .saved-contact-search-load {flex-basis:auto}
+  body.admin-mode .saved-search-actions {right:0;max-width:calc(100vw - 60px)}
+  body.admin-mode .contact-saved-popover {left:0;width:min(94vw,520px)}
+  body.admin-mode .contact-filter-actions {flex-wrap:wrap}
+  body.admin-mode .contact-filter-actions button {flex:1;min-width:140px}
+}
+@media(max-width:420px){
+  body.admin-mode .contact-search-quick-actions>button {flex:1 1 100%}
+  body.admin-mode .contact-saved-popover {width:calc(100vw - 36px)}
+}
+
+/* Universal contact search and compact refinements */
+body.admin-mode .contact-universal-search {display:grid;gap:7px;max-width:100%}
+body.admin-mode .contact-universal-search>label {font-size:.83rem;font-weight:800;color:var(--admin-ink)}
+body.admin-mode .contact-universal-input {display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+body.admin-mode .contact-universal-input input {width:100%;box-sizing:border-box;min-width:0;min-height:48px;padding:0 16px;border:1px solid #bfcadc;border-radius:9px;font-size:1rem;background:#fff}
+body.admin-mode .contact-universal-input button {margin:0;min-height:48px;padding-inline:22px}
+body.admin-mode .contact-quick-help {grid-column:1/-1;color:#6c7b91;font-size:.78rem}
+@media(max-width:760px){
+body.admin-mode .contact-universal-input {grid-template-columns:1fr}
+body.admin-mode .contact-universal-input button {width:100%}
+body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-search-panel {display:none}
+body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-split {margin-top:0}
+}

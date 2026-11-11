@@ -104,6 +104,7 @@ let mapGradientEnabled = false;
 let communesGeojson = null;
 let mapZoom = 1;
 let selectedContactId = "";
+let contactMobileDetailOpen = false;
 let selectedContactIds = new Set();
 let selectedTrombinoscopeCategoryId = "";
 let selectedTrombinoscopePersonId = "";
@@ -3082,6 +3083,12 @@ function mailCampaignSelection() {
   const values = new FormData(form);
   return { searchId: String(values.get("searchId") || ""), templateId: String(values.get("templateId") || ""), consentConfirmed: values.get("consentConfirmed") === "1" };
 }
+function mailSearchUsesUnsupportedRules(item) {
+  if(item.sourceIds?.length||item.isSnapshot)return true;
+  const filters=item.filters||{};
+  if(filters.fieldJoinMode==="OR"||filters.activityKind)return true;
+  return Object.entries(filters).some(([key,val])=>key.startsWith("op_")&&!["contains",""].includes(val));
+}
 function renderMailCampaigns() {
   const templates = normalizeMailTemplates(adminState.mailTemplates);
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
@@ -3096,7 +3103,7 @@ function renderMailCampaigns() {
     <form class="admin-form mail-campaign-form" data-mail-campaign-form>
       <label>Liste de contacts (recherche enregistrée)
         <select name="searchId" required><option value="">Choisir une liste…</option>
-        ${searches.filter((item) => !item.sourceIds?.length).map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
+        ${searches.filter(item=>!mailSearchUsesUnsupportedRules(item)).map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
       </label>
       <label>Modèle de mail
         <select name="templateId" required><option value="">Choisir un modèle…</option>
@@ -3364,6 +3371,49 @@ function renderContactKeywordFilters(filters) {
   </fieldset>`;
 }
 
+function contactRuleMatch(contact,field,raw,op) {
+  const values=Array.isArray(contact[field.id])?contact[field.id]:[contact[field.id]];
+  const strings=values.map(v=>normalizeName(v??""));
+  const has=values.some(v=>v!==null&&v!==undefined&&String(v).trim()!=="");
+  if(op==="empty")return !has;
+  if(op==="not_empty")return has;
+  const expected=normalizeName(raw??"");
+  if(!expected)return true;
+  if(op==="before"||op==="after"){
+    const left=Date.parse(String(contact[field.id]||"").slice(0,10)),right=Date.parse(String(raw).slice(0,10));
+    return Number.isFinite(left)&&Number.isFinite(right)&&(op==="before"?left<right:left>right);
+  }
+  if(op==="not_contains")return !strings.some(v=>v.includes(expected));
+  if(op==="equals")return strings.some(v=>v===expected);
+  if(op==="not_equals")return !strings.some(v=>v===expected);
+  if(op==="starts_with")return strings.some(v=>v.startsWith(expected));
+  return contactMatchesDynamicFilter(contact,field,raw);
+}
+
+function contactLinkedActivity(contact,kind) {
+  const id=contact.id;
+  if(kind==="campaign"||kind==="attendance"||kind==="absence")return (adminState.campaignEvents||[]).some(ev=>(ev.participants||[]).some(p=>p.contactId===id&&(kind==="campaign"||(kind==="attendance"?p.status==="attended":p.status==="absent"))));
+  if(kind==="calendar")return (adminState.calendarEvents||[]).some(ev=>(ev.contactIds||[]).includes(id));
+  if(kind==="task")return (adminState.teamTasks||[]).some(t=>t.linkedContactId===id);
+  if(kind==="permanence")return (adminState.permanenceRequests||[]).some(p=>p.contactId===id);
+  return true;
+}
+
+function renderContactOperator(field,filters) {
+  const op=filters.ops?.[field.id]||"contains",choices=[["contains","Contient"],["not_contains","Ne contient pas"],["equals","Est égal à"],["not_equals","Est différent de"],["starts_with","Commence par"],["empty","Est vide"],["not_empty","Est renseigné"]];
+  if(field.type==="date")choices.push(["before","Avant"],["after","Après"]);
+  return '<select name="op_'+attr(field.id)+'" aria-label="Opérateur '+attr(field.label)+'">'+choices.map(([v,label])=>'<option value="'+attr(v)+'"'+(op===v?' selected':'')+'>'+text(label)+'</option>').join("")+'</select>';
+}
+
+function renderContactAdvancedFilters(filters) {
+  const select=(name,key,choices,value)=>'<label>'+text(name)+'<select name="'+attr(key)+'">'+choices.map(([v,label])=>'<option value="'+attr(v)+'"'+(v===value?' selected':'')+'>'+text(label)+'</option>').join("")+'</select></label>';
+  return '<fieldset class="contact-advanced-filters"><legend>Conditions avancées</legend><div class="contact-filter-grid">'+
+  select("Combiner les champs","fieldJoinMode",[["AND","Tous (ET)"],["OR","Au moins un (OU)"]],filters.fieldJoinMode||"AND")+
+  select("Activité liée","activityKind",[["","Toutes"],["campaign","Inscrit à un événement"],["attendance","Présent à un événement"],["absence","Absent à un événement"],["calendar","Lié au calendrier"],["task","Lié à une tâche"],["permanence","Lié à une permanence"]],filters.activityKind||"")+
+  select("Trier","sortBy",[["","Par défaut"],["lastName","Nom"],["firstName","Prénom"],["city","Commune"],["createdAt","Date de création"],["updatedAt","Date de modification"]],filters.sortBy||"")+
+  select("Ordre","sortOrder",[["asc","Croissant"],["desc","Décroissant"]],filters.sortOrder||"asc")+'</div></fieldset>';
+}
+
 function contactSearchFilters() {
   const filters = adminFilters.contacts || {};
   const perPage = [10, 25, 100, 1000].includes(Number(filters.perPage)) ? Number(filters.perPage) : 100;
@@ -3371,9 +3421,9 @@ function contactSearchFilters() {
   const fields = {};
   contactFields().filter((field) => field.id !== "id").forEach((field) => {
     const value = String(filters[contactFilterKey(field)] || "").trim();
-    if (value) fields[field.id] = value;
+    if (value || ["empty","not_empty"].includes(filters["op_"+field.id])) fields[field.id] = value;
   });
-  return { q: String(filters.q || ""), page, perPage, fields, keywordIds: normalizedContactKeywordIds(filters.keywordIds), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" };
+  return {q:String(filters.q||""),page,perPage,fields,ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
 }
 
 
@@ -3387,11 +3437,15 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (key === "q" || key === "perPage" || (key.startsWith("field_") && key.length < 100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
-    sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : []
+    sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : [],
+    mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR",
+    isSnapshot: item.isSnapshot === true,
+    snapshotIds: Array.isArray(item.snapshotIds) ? [...new Set(item.snapshotIds.filter(id=>typeof id==="string"))] : [],
+    favorite: item.favorite === true
   })).slice(0, 200);
 }
 
@@ -3400,7 +3454,7 @@ function savedContactSearchFilters(form) {
   const allowed = new Set(contactFields().map((field) => contactFilterKey(field)));
   const filters = {};
   for (const [key, value] of Object.entries(values)) {
-    if (allowed.has(key) && String(value).trim()) filters[key] = String(value).trim();
+    if ((allowed.has(key)&&(String(value).trim()||["empty","not_empty"].includes(values["op_"+key.slice(6)])))||(key.startsWith("op_")&&allowed.has("field_"+key.slice(3)))||["fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key)) filters[key]=String(value).trim();
   }
   if (String(values.q || "").trim()) filters.q = String(values.q).trim();
   filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
@@ -3410,7 +3464,8 @@ function savedContactSearchFilters(form) {
 }
 
 function savedContactSearchLabel(item) {
-  if (item.sourceIds?.length) return "Fusion de " + item.sourceIds.length + " recherches";
+  if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
+  if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
   const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
@@ -3420,19 +3475,19 @@ function savedSearchContacts(item, searches = normalizeSavedContactSearches(admi
   if (!item || visited.has(item.id)) return [];
   const next = new Set(visited);
   next.add(item.id);
+  if (item.isSnapshot) return item.snapshotIds.map(id=>contactById(id)).filter(Boolean);
   if (item.sourceIds?.length) {
     const byId = new Map(searches.map((entry) => [entry.id, entry]));
-    const found = new Map();
-    for (const id of item.sourceIds) {
-      for (const contact of savedSearchContacts(byId.get(id), searches, next)) found.set(contact.id, contact);
-    }
-    return [...found.values()];
+    const lists=item.sourceIds.map(id=>savedSearchContacts(byId.get(id),searches,next));
+    if(item.mergeMode==="AND"){const sets=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));return (lists[0]||[]).filter(c=>sets.every(set=>set.has(c.id)));}
+    if(item.mergeMode==="EXCEPT"){const rejected=new Set(lists.slice(1).flat().map(c=>c.id));return (lists[0]||[]).filter(c=>!rejected.has(c.id));}
+    return [...new Map(lists.flat().map(c=>[c.id,c])).values()];
   }
   const filters = item.filters || {};
   return filteredContacts({
     q: filters.q || "",
     fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-    keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
+    keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
   });
 }
 
@@ -3503,6 +3558,29 @@ function exportSavedContactSearch(id) {
   showToast(result.rows.length + " adresses exportées · " + (result.totalAvoided + overlaps) + " doublon(s) évité(s), dont " + overlaps + " répétitions entre recherches.");
 }
 
+function freezeSavedContactSearch(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches);
+  const src=list.find(item=>item.id===id);
+  if(!src)return;
+  const ids=savedSearchContacts(src,list).map(c=>c.id);
+  const name=(src.name+" — figée").slice(0,120),now=new Date().toISOString();
+  adminState.savedContactSearches=[{id:crypto.randomUUID(),name,isSnapshot:true,snapshotIds:ids,filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId},...list];
+  saveAdminState("creation","recherche contact enregistree",name);
+  showToast(ids.length+" contacts figés dans une nouvelle liste.");
+}
+function favoriteSavedContactSearch(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches);
+  adminState.savedContactSearches=list.map(item=>item.id===id?{...item,favorite:!item.favorite}:item);
+  saveAdminState("modification","recherche contact enregistree","favori");
+}
+function exportSavedContactPeople(id) {
+  const list=normalizeSavedContactSearches(adminState.savedContactSearches),item=list.find(e=>e.id===id);
+  if(!item)return;
+  const contacts=savedSearchContacts(item,list),headers=contactFields().map(f=>f.id);
+  const rows=[headers,...contacts.map(c=>headers.map(key=>Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
+  downloadFile("personnes-"+slugify(item.name)+".xlsx",participantWorkbookBytes(rows),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  showToast(contacts.length+" personnes exportées, une ligne par fiche.");
+}
 function mergeSavedContactSearches() {
   const checked = [...document.querySelectorAll("[data-saved-search-merge]:checked")].map((input) => input.value);
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
@@ -3513,7 +3591,8 @@ function mergeSavedContactSearches() {
   const cleanName = name.trim().slice(0, 120);
   if (!cleanName) { showToast("Saisissez un nom."); return; }
   const now = new Date().toISOString();
-  const item = { id: crypto.randomUUID(), name: cleanName, sourceIds: ids, filters: {},
+  const mergeMode=document.querySelector("[data-saved-search-mode]")?.value||"OR";
+  const item = { id: crypto.randomUUID(), name: cleanName, sourceIds: ids, mergeMode, filters: {},
     createdAt: now, updatedAt: now, createdBy: currentUserId };
   adminState.savedContactSearches = [item, ...searches];
   adminFilters.activeSavedContactSearchId = item.id;
@@ -3524,24 +3603,32 @@ function mergeSavedContactSearches() {
 }
 
 function renderSavedContactSearches({ standalone = false } = {}) {
-  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const allSearches = normalizeSavedContactSearches(adminState.savedContactSearches).sort((a,b)=>Number(b.favorite)-Number(a.favorite));
+  const searches = standalone ? allSearches : allSearches.slice(0,8);
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
-      <div><h3>Recherche sauvegardée</h3><p>Regroupez plusieurs listes (OU), exportez un fichier Excel avec une ligne par adresse, sans modifier les contacts d'origine.</p></div>
+      <div><h3>Mes recherches</h3><p>${standalone?"Gérez, combinez et exportez vos listes.":"Retrouvez vos favoris et dernières recherches."}</p></div>
       ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
-        <label title="Inclure cette recherche dans une fusion"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Fusionner ${attr(item.name)}" /></label>
-        <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-          <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Statistiques en cours de calcul…</small>
-        </button>
-        <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel</button>
-        ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
-        <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}">Supprimer</button>
-      </div>`;
-    }).join("")}</div><button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+         <label class="saved-search-check" title="Inclure dans une combinaison"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Sélectionner ${attr(item.name)}" /></label>
+         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
+           <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
+         </button>
+         <button type="button" class="saved-search-favorite" data-contact-favorite-search="${attr(item.id)}" title="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}">${item.favorite?"★":"☆"}</button>
+         <details class="saved-search-more"><summary aria-label="Actions sur ${attr(item.name)}" title="Plus d’actions">⋯</summary>
+           <div class="saved-search-actions" role="group" aria-label="Actions sur ${attr(item.name)}">
+             <button type="button" data-contact-export-search="${attr(item.id)}">Exporter par adresse</button>
+             <button type="button" data-contact-export-people="${attr(item.id)}">Exporter par personne</button>
+             <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
+             ${!item.sourceIds?.length&&!item.isSnapshot?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
+             <button type="button" class="danger" data-contact-delete-search="${attr(item.id)}">Supprimer la recherche</button>
+           </div>
+         </details>
+       </div>`;
+    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode> <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3610,11 +3697,12 @@ function saveContactSearch(form, existingId = "") {
 }
 
 function loadContactSearch(id) {
+  contactMobileDetailOpen=false;
   const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
   if (!item) return;
   // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
   clearContactSelection();
-  adminFilters.contacts = item.sourceIds?.length ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
+  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
   adminFilters.activeSavedContactSearchId = item.id;
   activeAdminSection = "contacts";
   renderAdmin();
@@ -3662,23 +3750,24 @@ function contactMatchesDynamicFilter(contact = {}, field, rawValue = "") {
 }
 
 function contactMatchesFilters(contact, filters, fieldsById) {
-  const normalizedQuery = filters.q ? normalizeName(filters.q) : "";
-  if (normalizedQuery && !contactSearchText(contact).includes(normalizedQuery)) return false;
-  if (!contactMatchesKeywords(contact, filters.keywordIds, filters.keywordMode)) return false;
-  return Object.entries(filters.fields || {}).every(([fieldId, value]) => {
-    const field = fieldsById.get(fieldId);
-    return !field || contactMatchesDynamicFilter(contact, field, value);
-  });
+  const query=filters.q?normalizeName(filters.q):"";
+  if(query&&!contactSearchText(contact).includes(query))return false;
+  if(!contactMatchesKeywords(contact,filters.keywordIds,filters.keywordMode))return false;
+  if(filters.activityKind&&!contactLinkedActivity(contact,filters.activityKind))return false;
+  const tests=Object.entries(filters.fields||{}).map(([id,val])=>{const field=fieldsById.get(id);return !field||contactRuleMatch(contact,field,val,filters.ops?.[id]||"contains");});
+  return filters.fieldJoinMode==="OR"?(!tests.length||tests.some(Boolean)):tests.every(Boolean);
 }
 
 function filteredContacts(filters = contactSearchFilters()) {
   if (arguments.length === 0 && adminFilters.activeSavedContactSearchId) {
     const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
-    if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
+    if (active?.sourceIds?.length||active?.isSnapshot) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  return adminState.localContacts.filter((contact) => contact.entityType !== "institution" && contactMatchesFilters(contact, filters, fieldsById));
+  const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
+  if(filters.sortBy){const key=filters.sortBy,d=filters.sortOrder==="desc"?-1:1;results.sort((a,b)=>d*String(a[key]||"").localeCompare(String(b[key]||""),"fr",{sensitivity:"base",numeric:true}));}
+  return results;
 }
 
 function isAllFilteredContactSelectionActive(filters = contactSearchFilters()) {
@@ -3704,18 +3793,46 @@ function renderContactDynamicFilter(field, value = "") {
   return `<label>${label}<input name="${name}" value="${attr(value)}" placeholder="${attr(placeholder)}" /></label>`;
 }
 
+
+function contactFilterChips(filters) {
+  const chips=[];
+  if(filters.q?.trim()) chips.push({key:"q",label:"Texte : "+filters.q.trim()});
+  const labels=new Map(contactFields().map(field=>[field.id,field.label]));
+  const operatorLabels={contains:"contient",not_contains:"ne contient pas",equals:"égal à",not_equals:"différent de",starts_with:"commence par",empty:"est vide",not_empty:"est renseigné",before:"avant",after:"après"};
+  Object.entries(filters.fields||{}).forEach(([id,value])=>{
+    const op=filters.ops?.[id]||"contains";
+    chips.push({key:"field_"+id,label:(labels.get(id)||id)+" "+(operatorLabels[op]||"contient")+(["empty","not_empty"].includes(op)?"":" «"+value+"»")});
+  });
+  if(filters.keywordIds?.length) chips.push({key:"keywordIds",label:filters.keywordIds.length+" mot(s)-clé(s) ("+filters.keywordMode+")"});
+  if(filters.activityKind)chips.push({key:"activityKind",label:"Activité : "+filters.activityKind});
+  if(filters.fieldJoinMode==="OR")chips.push({key:"fieldJoinMode",label:"Champs : OU"});
+  if(filters.sortBy)chips.push({key:"sortBy",label:"Tri : "+filters.sortBy});
+  return chips;
+}
+function renderContactFilterChips(filters) {
+  const chips=contactFilterChips(filters);
+  if(!chips.length)return '<p class="contact-filter-empty">Aucun filtre actif. Tous les contacts sont affichés.</p>';
+  return '<div class="contact-active-filters" aria-label="Critères actifs"><span class="contact-chip-heading">Filtres appliqués</span>'+chips.map(chip=>
+    '<button type="button" class="contact-filter-chip" data-contact-remove-filter="'+attr(chip.key)+'" title="Retirer ce filtre">'+text(chip.label)+' <span aria-hidden="true">×</span></button>'
+  ).join("")+'<button type="button" class="contact-filter-clear" data-contact-reset-filters>Tout effacer</button></div>';
+}
+
 function renderContactDynamicFilters(filters) {
-  const primaryFields = new Set(["firstName", "lastName", "city"]);
-  // Conserver la saisie historique si une recherche enregistrée utilisait field_keywords.
-  const fields = contactFields().filter((field) => field.id !== "id" && (field.id !== "keywords" || Boolean(filters.fields?.keywords)) && !primaryFields.has(field.id));
-  const activeCount = Object.keys(filters.fields || {}).filter((id) => !primaryFields.has(id)).length + normalizedContactKeywordIds(filters.keywordIds).length;
-  return `<details class="contact-filter-section contact-dynamic-search" ${activeCount ? "open" : ""}>
-    <summary><span>Plus de critères</span><small>${activeCount ? `${activeCount} actif${activeCount > 1 ? "s" : ""}` : "Téléphone, email, catégorie, organisation…"}</small></summary>
-    ${renderContactKeywordFilters(filters)}
-    <div class="contact-filter-grid">${fields.map((field) => renderContactDynamicFilter(field, filters.fields[field.id] || "")).join("")}</div>
-    <div class="contact-filter-actions">
-      <button class="primary-action compact" type="submit">Appliquer les filtres</button>
-      <button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button>
+  const primaryFields=new Set(["firstName","lastName","city"]);
+  const fields=contactFields().filter(field=>field.id!=="id"&&field.id!=="keywords"&&!primaryFields.has(field.id));
+  const activeFields=new Set(Object.keys(filters.fields||{}));
+  const count=contactFilterChips(filters).length;
+  const hasAdvanced=(filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
+  return `<details class="contact-filter-section contact-dynamic-search" ${hasAdvanced?'open':''}>
+    <summary><strong>Recherche avancée</strong><small>${hasAdvanced?count+" paramètre(s) actif(s)":"Ajouter des critères si nécessaire"}</small></summary>
+    <div class="contact-advanced-workspace">
+      <p class="contact-guidance">Choisissez uniquement les critères utiles. Les champs non ajoutés ne gênent pas votre recherche.</p>
+      <div class="contact-primary-operators"><span>Type de correspondance pour les champs rapides</span>${["firstName","lastName","city"].map(id=>`<label>${text(id==="firstName"?"Prénom":id==="lastName"?"Nom":"Commune")}${renderContactOperator({id,label:id,type:"text"},filters)}</label>`).join("")}</div>
+      ${renderContactAdvancedFilters(filters)}
+      <div class="contact-criteria-heading"><strong>Critères supplémentaires</strong><label class="contact-add-field">Ajouter un critère <select data-contact-add-field aria-label="Choisir un critère à ajouter"><option value="">Choisir un champ…</option>${fields.map(field=>`<option value="${attr(field.id)}">${text(field.label)}</option>`).join("")}</select></label><button class="secondary-action compact" type="button" data-contact-add-field-apply>Ajouter</button></div>
+      <div class="contact-filter-grid contact-criteria-list">${fields.map(field=>`<div class="contact-rule-field" data-contact-field-row="${attr(field.id)}" ${activeFields.has(field.id)?"":"hidden"}><div class="contact-rule-controls">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}<button type="button" class="contact-criterion-remove" data-contact-hide-field="${attr(field.id)}" aria-label="Retirer ${attr(field.label)}" title="Retirer ce critère">×</button></div></div>`).join("")}</div>
+      ${renderContactKeywordFilters(filters)}
+      <div class="contact-filter-actions"><button class="primary-action compact" type="submit">Appliquer les critères</button><button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button></div>
     </div>
   </details>`;
 }
@@ -4495,28 +4612,32 @@ function renderContacts() {
         <button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button>
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
+        <div class="contact-universal-search"><label for="contact-query-input">Recherche dans tous les champs</label><div class="contact-universal-input"><input id="contact-query-input" name="q" type="search" autocomplete="off" value="${attr(filters.q||"")}" placeholder="Nom, prénom, organisation, téléphone, mot-clé…"/><button class="primary-action" type="submit">Rechercher</button></div></div>
         <div class="contact-search-main">
           <label class="contact-search-field"><span>Prénom</span><input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
           <label class="contact-search-field"><span>Nom</span><input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
           <label class="contact-search-field"><span>Commune</span><input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
-          <button class="primary-action" type="submit">Rechercher</button>
+          <span class="contact-quick-help">Affinez par prénom, nom ou commune.</span>
         </div>
+        
         ${renderContactDynamicFilters(filters)}
+        ${renderContactFilterChips(filters)}
         ${renderContactPagination({ ...filters, page }, contacts.length)}
       </form>
+      <div class="contact-search-quick-actions">${adminFilters.activeSavedContactSearchId?`<span class="contact-current-search">Recherche enregistrée active</span>`:""}<button type="button" class="secondary-action compact" data-contact-save-search>Enregistrer la recherche</button><button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Gérer mes listes</button></div>
       <div class="contact-saved-popover-wrap">
         <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
         <div id="contact-saved-popover" class="contact-saved-popover" hidden></div>
       </div>
     </section>
-    <div class="admin-split contact-split">
+    <div class="admin-split contact-split ${contactMobileDetailOpen?"mobile-detail-open":""}">
       <section class="admin-list contact-result-list">
         <div class="contact-selection-toolbar">
-          <strong>${selectedCount} selectionne(s)</strong>
-          <button class="secondary-action compact" type="button" data-contact-select-page>Selectionner la page</button>
-          <button class="secondary-action compact" type="button" data-contact-select-filtered>Selectionner tous les contacts</button>
+          <strong>${selectedCount} contact(s) sélectionné(s)</strong>
+          <button class="secondary-action compact" type="button" data-contact-select-page>Sélectionner cette page</button>
+          <button class="secondary-action compact" type="button" data-contact-select-filtered>Sélectionner les ${contacts.length} résultats</button>
           <button class="secondary-action compact" type="button" data-contact-clear-selection>Vider</button>
-          ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la selection</button>` : ""}
+          ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la sélection</button>` : ""}
           <small>${selectedInResults} selectionne(s) dans les resultats filtres</small>
         </div>
         ${pageContacts.map((contact) => `<article class="contact-result-row ${selected?.id === contact.id ? "is-active" : ""}">
@@ -4524,7 +4645,7 @@ function renderContacts() {
           <button class="contact-result-card" type="button" data-open-contact="${attr(contact.id)}"><span class="contact-result-avatar" aria-hidden="true">${text(`${contact.firstName || ""} ${contact.lastName || contact.usageName || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?")}</span><span class="contact-result-copy"><strong>${text(contactDisplayName(contact))}</strong><span>${text([contact.email, contact.mobile || contact.phone, contact.city].filter(Boolean).join(" · "))}</span><em>${text(contact.usageName && contact.birthName && contact.usageName !== contact.birthName ? `Usage ${contact.usageName} · naissance ${contact.birthName}` : contact.category || "autre")}</em></span></button>
         </article>`).join("") || empty("Aucun contact.")}
       </section>
-      <section class="admin-detail contact-sticky-detail">${selected ? renderContactForm(selected) : empty("Aucun contact.")}</section>
+      <section class="admin-detail contact-sticky-detail"><button type="button" class="contact-mobile-back secondary-action compact" data-contact-mobile-back>← Retour aux résultats</button>${selected ? renderContactForm(selected) : empty("Aucun contact.")}</section>
     </div>
   </div>`;
 }
@@ -4590,9 +4711,9 @@ function renderContactImportExport() {
       <section class="contact-io-card">
         <h3>Exporter des contacts</h3>
         <p>Choisissez les contacts a exporter et le format souhaite.</p>
-        <div class="contact-io-choice"><label><input type="radio" checked /> Tous les contacts</label><small>Exporter l'ensemble de vos contacts.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" disabled /> Contacts filtres</label><small>Export selon les filtres appliques.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" disabled /> Contacts selectionnes</label><small>Export uniquement les contacts selectionnes.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="all" checked /> Tous les contacts</label><small>Exporter l'ensemble de vos contacts.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="filtered" /> Contacts filtres</label><small>Export selon les filtres appliques.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="selected" /> Contacts selectionnes</label><small>Export uniquement les contacts selectionnes.</small></div>
         <label>Format d'export<select><option>CSV (separateur point-virgule)</option><option>JSON</option></select></label>
         <div class="contact-admin-actions"><button class="primary-action" type="button" data-contact-export="csv">Exporter les contacts</button><button class="secondary-action" type="button" data-contact-export="json">Exporter JSON</button></div>
       </section>
@@ -6594,6 +6715,7 @@ async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal,
 async function deleteSelectedContactsFast(selectedCount = null) {
   const filters = contactSearchFilters();
   if (isAllFilteredContactSelectionActive(filters)) {
+    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot)){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
     await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
@@ -6613,11 +6735,16 @@ function csvEscape(value = "") {
 }
 
 function exportContacts(format = "csv") {
+  const scope=document.querySelector("input[name=contactExportScope]:checked")?.value||"all";
+  const base=adminState.localContacts.filter(c=>c.entityType!=="institution");
+  const subset=scope==="filtered"?filteredContacts():scope==="selected"?(isAllFilteredContactSelectionActive(contactSearchFilters())?filteredContacts():base.filter(c=>selectedContactIds.has(c.id))):base;
+  if(!subset.length){showToast("Aucun contact à exporter.");return;}
   if (format === "json") {
-    downloadFile("contacts-locaux.json", JSON.stringify(adminState.localContacts, null, 2), "application/json;charset=utf-8");
+    downloadFile("contacts-locaux.json", JSON.stringify(subset, null, 2), "application/json;charset=utf-8");
     return;
   }
-  const { headers, rows } = contactExportRows();
+  const headers=contactFields().map(field=>field.id);
+  const rows=subset.map(c=>headers.map(id=>Array.isArray(c[id])?c[id].join(", "):c[id]??""));
   const csv = [headers.join(";"), ...rows.map((row) => row.map(csvEscape).join(";"))].join("\n");
   downloadFile("contacts-locaux.csv", csv, "text/csv;charset=utf-8");
 }
@@ -8933,6 +9060,7 @@ document.addEventListener("click", async (event) => {
   const openContact = event.target.closest("[data-open-contact]");
   if (openContact) {
     selectedContactId = openContact.dataset.openContact;
+    contactMobileDetailOpen = true;
     activeAdminSection = "contacts";
     renderAdmin();
   }
@@ -8995,6 +9123,22 @@ document.addEventListener("click", async (event) => {
     renderAdmin();
   }
 
+  if(event.target.closest("[data-contact-mobile-back]")){contactMobileDetailOpen=false;renderAdmin();return;}
+  const addCriterion=event.target.closest("[data-contact-add-field-apply]");
+  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input[name],select[name^=field_]")?.focus();}return;}
+  const removeChip=event.target.closest("[data-contact-remove-filter]");
+  if(removeChip){
+    const key=removeChip.dataset.contactRemoveFilter;
+    if(key==="keywordIds"){adminFilters.contacts.keywordIds=[];}
+    else if(key==="activityKind"){adminFilters.contacts.activityKind="";}
+    else if(key==="fieldJoinMode"){adminFilters.contacts.fieldJoinMode="AND";}
+    else if(key==="sortBy"){adminFilters.contacts.sortBy="";adminFilters.contacts.sortOrder="asc";}
+    else if(key==="q"){adminFilters.contacts.q="";}
+    else if(key.startsWith("field_")){adminFilters.contacts[key]="";adminFilters.contacts["op_"+key.slice(6)]="contains";}
+    adminFilters.activeSavedContactSearchId="";clearContactSelection();renderAdmin();return;
+  }
+  const hideCriterion=event.target.closest("[data-contact-hide-field]");
+  if(hideCriterion){const id=hideCriterion.dataset.contactHideField;const row=hideCriterion.closest("[data-contact-field-row]");if(row){row.querySelectorAll("input,select").forEach(el=>{if(el.name==="op_"+id)el.value="contains";else el.value="";});row.hidden=true;}return;}
   const contactSaveSearch = event.target.closest("[data-contact-save-search]");
   if (contactSaveSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
@@ -9003,6 +9147,12 @@ document.addEventListener("click", async (event) => {
   }
   const contactLoadSearch = event.target.closest("[data-contact-load-search]");
   if (contactLoadSearch) { loadContactSearch(contactLoadSearch.dataset.contactLoadSearch); return; }
+  const peopleExport=event.target.closest("[data-contact-export-people]");
+  if(peopleExport){exportSavedContactPeople(peopleExport.dataset.contactExportPeople);return;}
+  const freezeSearch=event.target.closest("[data-contact-freeze-search]");
+  if(freezeSearch){freezeSavedContactSearch(freezeSearch.dataset.contactFreezeSearch);return;}
+  const favoriteSearch=event.target.closest("[data-contact-favorite-search]");
+  if(favoriteSearch){favoriteSavedContactSearch(favoriteSearch.dataset.contactFavoriteSearch);return;}
   const searchExport = event.target.closest("[data-contact-export-search]");
   if (searchExport) { exportSavedContactSearch(searchExport.dataset.contactExportSearch); return; }
   if (event.target.closest("[data-contact-merge-searches]")) { mergeSavedContactSearches(); return; }
@@ -9316,7 +9466,7 @@ document.addEventListener("submit", async (event) => {
     const key = filter.dataset.adminFilter;
     const values = new FormData(filter, event.submitter);
     adminFilters[key] = Object.fromEntries(values.entries());
-    if (key === "contacts") { adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
+    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }

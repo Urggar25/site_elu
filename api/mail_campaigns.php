@@ -225,6 +225,18 @@ if ($action === 'preview' || $action === 'prepare') {
     if (!$search || !$template || !trim((string)($template['subject'] ?? '')) || !trim((string)($template['body'] ?? ''))) {
         json_response(['ok' => false, 'error' => 'Recherche ou modèle invalide.'], 400);
     }
+    // Keep server-side recipient selection aligned with the search rules actually supported by PHP.
+    // Reject unsupported filters instead of silently ignoring exclusions (potentially sending to extra people).
+    $rules = is_array($search['filters'] ?? null) ? $search['filters'] : [];
+    $unsupported = !empty($search['sourceIds']) || !empty($search['isSnapshot'])
+        || (($rules['fieldJoinMode'] ?? 'AND') === 'OR') || !empty($rules['activityKind']);
+    foreach ($rules as $ruleKey => $ruleValue) {
+        if (str_starts_with((string)$ruleKey, 'op_') && !in_array((string)$ruleValue, ['', 'contains'], true)) {
+            $unsupported = true;
+            break;
+        }
+    }
+    if ($unsupported) json_response(['ok' => false, 'error' => 'Cette recherche avancée n’est pas compatible avec les campagnes email. Utilisez une liste avec filtres classiques.'], 400);
     $recipients = mailer_recipients($state, $search);
     if ($action === 'preview') json_response(['ok' => true, 'total' => count($recipients),
         'sample' => array_slice($recipients, 0, 5),
