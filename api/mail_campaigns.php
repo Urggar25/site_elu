@@ -237,7 +237,7 @@ if ($action === 'preview' || $action === 'prepare') {
     // Keep server-side recipient selection aligned with the search rules actually supported by PHP.
     // Reject unsupported filters instead of silently ignoring exclusions (potentially sending to extra people).
     $rules = is_array($search['filters'] ?? null) ? $search['filters'] : [];
-    $unsupported = !empty($search['sourceIds']) || !empty($search['isSnapshot'])
+    $unsupported = !empty($search['sourceIds']) || !empty($search['isSnapshot']) || in_array(($search['listType'] ?? 'dynamic'), ['manual', 'hybrid'], true)
         || (($rules['fieldJoinMode'] ?? 'AND') === 'OR') || !empty($rules['activityKind']);
     foreach ($rules as $ruleKey => $ruleValue) {
         if (str_starts_with((string)$ruleKey, 'op_') && !in_array((string)$ruleValue, ['', 'contains'], true)) {
