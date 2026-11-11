@@ -221,8 +221,9 @@
             </label>
             <label class="consent">
               <input type="checkbox" name="consent" required />
-              J'accepte de recevoir les actualités correspondant aux catégories choisies.
+              J’accepte de recevoir par courriel les actualités et informations parlementaires correspondant aux thèmes choisis. Je peux retirer mon consentement à tout moment.
             </label>
+            <p class="legal-form-notice">Les informations fournies servent uniquement à gérer cet abonnement. <button type="button" class="legal-inline-link" data-panel-target="legal">Lire la politique de confidentialité</button>.</p>
             <button class="primary-action" type="submit">Enregistrer mes préférences</button>
             <p id="newsletter-feedback" class="feedback" role="status"></p>
           </form>
@@ -249,6 +250,7 @@
             <label>Message
               <textarea name="message" required maxlength="2500"></textarea>
             </label>
+            <p class="legal-form-notice">Vos informations sont utilisées pour répondre à votre demande. Évitez de transmettre des données sensibles non nécessaires. <button type="button" class="legal-inline-link" data-panel-target="legal">Protection de vos données</button>.</p>
             <button class="primary-action" type="submit">Envoyer</button>
             <p id="support-feedback" class="feedback" role="status"></p>
           </form>
@@ -338,25 +340,90 @@
           <div id="content-detail"></div>
         </section>
 
+
         <section class="tab-panel" id="panel-legal" data-panel="legal">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Informations legales</p>
-              <h2>Mentions, confidentialité et cookies</h2>
-            </div>
-          </div>
-          <div class="legal-grid">
-            <article>
-              <h3>Mentions legales</h3>
-              <p>Ce site présente l'activité parlementaire, les déplacements et les contenus publics liés au mandat.</p>
+          <div class="legal-page">
+            <header class="legal-intro">
+              <p class="eyebrow">Transparence &amp; protection des données</p>
+              <h2>Informations légales et vie privée</h2>
+              <p>Retrouvez l'identité de l'éditeur du site, les informations relatives à l'hébergement et les règles applicables à vos données personnelles.</p>
+              <p class="legal-updated">Dernière mise à jour : 11 novembre 2026</p>
+            </header>
+            <nav class="legal-navigation" aria-label="Sommaire des informations légales">
+              <a href="#legal-mentions">Mentions légales</a>
+              <a href="#legal-confidentialite">Données personnelles</a>
+              <a href="#legal-cookies">Cookies et traceurs</a>
+              <a href="#legal-droits">Exercer vos droits</a>
+            </nav>
+
+            <article class="legal-card" id="legal-mentions">
+              <div class="legal-card-heading"><span class="legal-number">01</span><div><span class="legal-kicker">Identification</span><h3>Mentions légales</h3></div></div>
+              <h4>Éditeur du site et directeur de la publication</h4>
+              <p><strong>Emeric Salmon</strong>, député de la deuxième circonscription de la Haute-Saône, éditeur du présent site d'information et de communication relatif à son activité parlementaire.</p>
+              <div class="legal-info-grid">
+                <div><span>Permanence parlementaire</span><strong>5 rue de la Font, 70200 Lure, France</strong></div>
+                <div><span>Adresse parlementaire</span><strong>Assemblée nationale, 126 rue de l'Université, 75355 Paris 07 SP, France</strong></div>
+                <div><span>Contact</span><a href="mailto:emeric.salmon@assemblee-nationale.fr">emeric.salmon@assemblee-nationale.fr</a></div>
+                <div><span>Directeur de la publication</span><strong>Emeric Salmon</strong></div>
+              </div>
+              <h4>Hébergement</h4>
+              <p>Site hébergé par <strong>Hostinger International Limited</strong>, 61 Lordou Vironos Street, 6023 Larnaca, Chypre. Contact de l'hébergeur : <a href="mailto:compliance@hostinger.com">compliance@hostinger.com</a>. <a href="https://www.hostinger.com/fr" target="_blank" rel="noopener noreferrer">Site de l'hébergeur ↗</a>.</p>
+              <p class="legal-note">L'entité contractante Hostinger indiquée ici correspond aux conditions générales applicables aux clients situés dans l'Union européenne ; l'entité effectivement chargée de l'hébergement technique doit être confirmée dans le contrat du site.</p>
+              <h4>Objet du site</h4>
+              <p>Le site présente des informations relatives au mandat parlementaire, aux activités publiques, aux événements et aux actualités. Certains services nécessitent un compte utilisateur. Les informations diffusées n'ont pas valeur de publication officielle de l'Assemblée nationale, sauf indication ou renvoi explicite à une source institutionnelle.</p>
+              <h4>Propriété intellectuelle et liens externes</h4>
+              <p>Les textes, photographies, vidéos, éléments graphiques et signes distinctifs sont soumis aux droits de leurs titulaires respectifs. Toute réutilisation doit respecter les droits applicables et les éventuelles licences ou autorisations mentionnées à proximité des contenus.</p>
+              <p>Les liens vers des sites tiers sont fournis à titre d'information. Leur contenu et leurs propres politiques de confidentialité relèvent de leurs éditeurs respectifs.</p>
+              <h4>Responsabilité et mise à jour</h4>
+              <p>Les informations sont actualisées dans la mesure du possible. Les contenus peuvent être modifiés ou retirés. Pour signaler une erreur, un contenu litigieux ou une difficulté d'accès, vous pouvez écrire à l'adresse de contact indiquée ci-dessus.</p>
             </article>
-            <article>
-              <h3>Données personnelles</h3>
-              <p>Les données de compte, de newsletter et de support servent uniquement au suivi des demandes et communications choisies.</p>
+
+            <article class="legal-card" id="legal-confidentialite">
+              <div class="legal-card-heading"><span class="legal-number">02</span><div><span class="legal-kicker">Règlement général sur la protection des données</span><h3>Politique de confidentialité</h3></div></div>
+              <p>La présente politique explique les grandes catégories de traitements liés au site et à ses outils d'administration. Elle s'applique sous réserve des informations spécifiques remises lors d'une collecte ou d'un contact direct.</p>
+              <h4>Responsable du traitement et contact</h4>
+              <p><strong>Emeric Salmon</strong>, aux coordonnées précisées dans les mentions légales, est le point de contact pour les traitements mis en œuvre sous sa responsabilité dans le cadre de ce site. Courriel : <a href="mailto:emeric.salmon@assemblee-nationale.fr">emeric.salmon@assemblee-nationale.fr</a>. L'identité du responsable de chaque traitement indépendant, notamment lorsqu'un organisme distinct détermine ses finalités, doit être appréciée séparément.</p>
+              <h4>Quelles données peuvent être traitées et pourquoi ?</h4>
+              <div class="legal-table-scroll"><table class="legal-table">
+                <thead><tr><th scope="col">Service</th><th scope="col">Données concernées</th><th scope="col">Finalité et fondement</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Comptes et espace utilisateur</th><td>Identité, coordonnées, identifiants de connexion, préférences, informations de session.</td><td>Création et gestion du compte, authentification, sécurité et fourniture du service demandé : exécution des conditions d'utilisation du service et, selon les opérations, intérêt légitime de sécurisation.</td></tr>
+                  <tr><th scope="row">Actualités et abonnements</th><td>Adresse électronique, commune si renseignée, thèmes choisis, fréquence, informations relatives à l'inscription.</td><td>Envoi des informations demandées : consentement, révocable à tout moment.</td></tr>
+                  <tr><th scope="row">Support et propositions</th><td>Identité du titulaire du compte, coordonnées et contenu du message.</td><td>Réponse aux sollicitations et suivi des échanges : intérêt légitime à traiter les demandes reçues ; toute utilisation ultérieure à des fins de communication distinctes nécessite son propre fondement.</td></tr>
+                  <tr><th scope="row">Activité parlementaire et dossiers</th><td>Coordonnées professionnelles, informations transmises dans des échanges, éléments de suivi de dossiers, documents associés.</td><td>Traitement des demandes et organisation du travail parlementaire, dans la limite des missions concernées et d'un fondement juridique adapté à chaque dossier.</td></tr>
+                  <tr><th scope="row">Gestion des événements et contacts</th><td>Identité, coordonnées, commune, fonctions, participation et informations de suivi.</td><td>Organisation des événements et gestion des relations professionnelles ou institutionnelles, sur un fondement déterminé selon le contexte (notamment intérêt légitime, consentement ou autre base applicable).</td></tr>
+                  <tr><th scope="row">Fonctionnement et sécurité</th><td>Données techniques nécessaires, événements de connexion, journaux de sécurité et, le cas échéant, adresse IP.</td><td>Sécurisation et bon fonctionnement du service : intérêt légitime et obligations légales éventuelles.</td></tr>
+                </tbody>
+              </table></div>
+              <h4>Données particulières et opinions politiques</h4>
+              <p>Le seul fait de figurer dans un fichier de communication politique peut révéler, directement ou indirectement, des opinions politiques. Les données sensibles au sens de l'article 9 du RGPD ne peuvent être traitées que lorsqu'une exception légale spécifique est applicable, avec les garanties correspondantes. L'inscription à une newsletter ne vaut pas autorisation générale de constituer un profil politique, ni de transmettre les données à d'autres organismes.</p>
+              <p>En particulier, les fichiers de contacts utilisés dans le cadre d'une campagne électorale ou d'une prospection politique sont soumis à des règles propres : information sur l'origine des données, finalité précise, base légale, droit d'opposition et, lorsque la réglementation l'impose, consentement préalable et explicite. Aucun transfert d'un fichier lié à une activité parlementaire vers un fichier de campagne ne saurait être présumé licite.</p>
+              <h4>Destinataires et sous-traitants</h4>
+              <p>Les données sont destinées aux membres habilités de l'équipe et, dans la mesure nécessaire, aux prestataires techniques chargés de l'hébergement, du fonctionnement et de l'envoi des communications. Elles ne sont pas destinées à être vendues. Tout partage avec un organisme tiers doit reposer sur une finalité déterminée et un fondement valable.</p>
+              <h4>Durées de conservation</h4>
+              <p>Les données doivent être conservées pendant une durée proportionnée aux finalités poursuivies, puis supprimées, anonymisées ou archivées lorsqu'un motif légal le justifie. Pour les abonnements, la conservation active prend fin lors du désabonnement, sous réserve du maintien d'une information minimale permettant de respecter une opposition. Pour les comptes et les demandes, les durées dépendent de la clôture de la relation, des besoins de suivi et des obligations légales éventuelles.</p>
+              <p class="legal-note"><strong>Point de conformité à compléter :</strong> les durées chiffrées et les règles techniques de purge des comptes, demandes, contacts, dossiers et journaux doivent être définies et vérifiées dans le registre interne avant de pouvoir annoncer des délais précis au public.</p>
+              <h4>Origine des données et informations indirectes</h4>
+              <p>Les données peuvent être fournies directement par les personnes ou provenir, selon les besoins et les cas licites, d'interlocuteurs professionnels, de sources institutionnelles ou de sources accessibles au public. Lorsqu'une collecte indirecte est réalisée, les personnes doivent recevoir l'information complémentaire prévue par l'article 14 du RGPD, notamment sur l'origine des données et les finalités de leur utilisation.</p>
+              <h4>Sécurité, hébergement et transferts internationaux</h4>
+              <p>Des mesures techniques et organisationnelles appropriées doivent protéger les données contre les accès non autorisés, les pertes ou les divulgations. Le prestataire contractuel d'hébergement mentionné ci-dessus est établi à Chypre, dans l'Union européenne ; cette information ne garantit pas à elle seule que toutes les opérations de stockage et tous les prestataires impliqués sont situés dans l'Espace économique européen. Tout transfert vers un pays tiers doit respecter les garanties prévues par le RGPD.</p>
+              <h4>Décisions automatisées</h4>
+              <p>Les fonctionnalités de recherche, tri et filtrage du site n'ont pas, par elles-mêmes, vocation à produire des décisions individuelles exclusivement automatisées ayant des effets juridiques ou similaires. Toute fonctionnalité nouvelle de cette nature nécessiterait une information spécifique.</p>
             </article>
-            <article>
-              <h3>Cookies</h3>
-              <p>Le site utilise le stockage local pour la session, les préférences et le fonctionnement hors base de données en démonstration.</p>
+
+            <article class="legal-card" id="legal-cookies">
+              <div class="legal-card-heading"><span class="legal-number">03</span><div><span class="legal-kicker">Navigation et stockage</span><h3>Cookies et traceurs</h3></div></div>
+              <p>Le site utilise des mécanismes de stockage nécessaires à certaines fonctions, notamment la session, la sécurité et les préférences d'interface. Ces mécanismes peuvent comprendre des cookies et le stockage local du navigateur ; les règles relatives aux traceurs peuvent s'appliquer à ces deux technologies.</p>
+              <p>Les traceurs strictement nécessaires au service demandé peuvent être utilisés sans consentement préalable, dans les limites prévues par la loi. <strong>Tout traceur non essentiel</strong> (par exemple publicité, suivi intersites ou certaines mesures d'audience) doit, lorsqu'il est effectivement déployé, être soumis à un choix préalable libre et éclairé, avec une possibilité de refus et de retrait aussi simple que l'acceptation.</p>
+              <p>Les liens externes vers les réseaux sociaux n'impliquent pas nécessairement de transmission de données avant leur activation ; les contenus tiers intégrés et les outils de mesure d'audience doivent être vérifiés séparément. Vous pouvez aussi gérer ou effacer les données de navigation dans les paramètres de votre navigateur, sans préjudice des fonctionnalités qui en dépendent.</p>
+              <p class="legal-note">La liste précise des cookies et traceurs, leurs fournisseurs, leurs finalités et leurs durées devra être ajustée aux services réellement activés sur le site. La présence de cette notice ne remplace pas un dispositif de recueil du consentement si des traceurs non exemptés sont utilisés.</p>
+            </article>
+
+            <article class="legal-card" id="legal-droits">
+              <div class="legal-card-heading"><span class="legal-number">04</span><div><span class="legal-kicker">Vos choix, vos droits</span><h3>Exercer vos droits</h3></div></div>
+              <p>Dans les conditions prévues par le RGPD, vous pouvez demander l'accès à vos données, leur rectification ou leur effacement, la limitation de leur traitement, et, lorsque les conditions sont réunies, leur portabilité. Vous pouvez vous opposer aux traitements fondés sur l'intérêt légitime, ainsi qu'à tout moment à l'utilisation de vos données à des fins de prospection politique. Lorsque le traitement repose sur le consentement, vous pouvez le retirer sans effet rétroactif sur les opérations déjà licites.</p>
+              <div class="legal-contact-panel"><div><h4>Vous souhaitez exercer un droit ?</h4><p>Adressez votre demande en précisant l'objet de votre démarche. Un justificatif d'identité ne doit être demandé qu'en cas de doute raisonnable sur l'identité du demandeur.</p><a class="legal-contact-button" href="mailto:emeric.salmon@assemblee-nationale.fr?subject=Exercice%20de%20mes%20droits%20RGPD">Écrire pour exercer mes droits ↗</a></div><div><strong>Par courrier</strong><p>Emeric Salmon<br>5 rue de la Font<br>70200 Lure</p></div></div>
+              <p>Une réponse doit en principe être apportée dans un délai d'un mois à compter de la réception de la demande, sous réserve des prolongations et exceptions prévues par le RGPD. Si vous estimez que vos droits ne sont pas respectés, vous pouvez déposer une réclamation auprès de la <a href="https://www.cnil.fr/fr/plaintes" target="_blank" rel="noopener noreferrer">CNIL ↗</a>.</p>
             </article>
           </div>
         </section>

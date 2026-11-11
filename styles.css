@@ -11794,3 +11794,40 @@ body.admin-mode .saved-list-workspace .saved-contact-search-load small{white-spa
 
 body.admin-mode .saved-contact-search-item{grid-template-columns:minmax(0,1fr) 38px 42px}
 body.admin-mode .saved-list-error{padding:12px 16px;margin:10px;border:1px solid #edc4b8;border-left:4px solid #cb4a3b;background:#fff5f2;border-radius:9px;color:#823322;font-size:.85rem}
+
+/* Espace public : mentions légales et protection des données */
+.legal-page{max-width:1100px;margin:0 auto;display:grid;gap:22px;padding-bottom:48px;color:#263b53}
+.legal-intro{background:linear-gradient(125deg,#193b61,#286c9d);color:#fff;padding:clamp(24px,4vw,44px);border-radius:18px}
+.legal-intro .eyebrow{color:#cfe6f8}
+.legal-intro h2{font-size:clamp(1.6rem,3vw,2.55rem);color:#fff;margin:8px 0 12px}
+.legal-intro>p{max-width:700px;line-height:1.65;color:#e6f1f9}
+.legal-intro .legal-updated{font-size:.82rem;color:#beddf5;margin:18px 0 0}
+.legal-navigation{display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:#f4f8fc;border:1px solid #dce8f2;border-radius:13px}
+.legal-navigation a{padding:11px 14px;border-radius:9px;background:#fff;border:1px solid #dae5ef;color:#245780;text-decoration:none;font-weight:750;font-size:.85rem}
+.legal-navigation a:hover,.legal-navigation a:focus-visible{background:#e6f1fc;border-color:#83b4e0}
+.legal-card{scroll-margin-top:95px;background:#fff;border:1px solid #dbe5ee;border-radius:17px;padding:clamp(20px,3vw,34px);box-shadow:0 6px 24px #2039550b}
+.legal-card-heading{display:flex;align-items:center;gap:15px;border-bottom:1px solid #e6edf4;padding-bottom:18px;margin-bottom:23px}
+.legal-number{flex-shrink:0;width:48px;height:48px;display:grid;place-items:center;border-radius:12px;background:#e9f2fb;color:#236397;font-weight:900;font-size:1.05rem}
+.legal-kicker{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;font-weight:850;color:#65849f}
+.legal-card h3{margin:4px 0 0;font-size:clamp(1.2rem,2vw,1.55rem);color:#1a3b5d}
+.legal-card h4{margin:23px 0 8px;font-size:1.02rem;color:#1e4c73}
+.legal-card p{font-size:.92rem;line-height:1.8;color:#425b70;margin:8px 0 12px}
+.legal-card a{color:#1d64a0;text-underline-offset:3px;overflow-wrap:anywhere}
+.legal-info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:19px 0}
+.legal-info-grid>div{display:grid;gap:7px;padding:17px;border-radius:11px;border:1px solid #e0eaf3;background:#f7fafd;min-width:0}
+.legal-info-grid span{font-size:.75rem;color:#74889b;font-weight:800}
+.legal-info-grid strong,.legal-info-grid a{font-size:.88rem;overflow-wrap:anywhere}
+.legal-note{padding:13px 16px;border-left:3px solid #e6b451;border-radius:0 9px 9px 0;background:#fffbf1;color:#6c5a35!important;font-size:.85rem!important}
+.legal-table-scroll{overflow-x:auto;border:1px solid #dbe7f2;border-radius:12px;margin:18px 0}
+.legal-table{width:100%;min-width:650px;border-collapse:collapse;text-align:left;font-size:.83rem}
+.legal-table th,.legal-table td{padding:14px 13px;vertical-align:top;border-bottom:1px solid #e7edf3;line-height:1.55}
+.legal-table thead th{background:#eaf3fb;color:#214c70;font-size:.77rem}
+.legal-table tbody th{background:#f8fbfe;color:#2e526e;font-weight:800;width:22%}
+.legal-table tbody tr:last-child td,.legal-table tbody tr:last-child th{border-bottom:0}
+.legal-contact-panel{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(180px,1fr);gap:20px;align-items:center;padding:20px;border:1px solid #bed7ec;border-radius:14px;background:#eef6fd}
+.legal-contact-panel h4{margin:0 0 7px}
+.legal-contact-button{display:inline-block;padding:10px 15px;border-radius:9px;background:#205f98;color:#fff!important;text-decoration:none;font-weight:850;font-size:.86rem;margin-top:10px}
+.legal-contact-panel>div+div{border-left:1px solid #bed7ec;padding-left:20px}
+.legal-form-notice{font-size:.8rem;line-height:1.6;color:#5e7186}
+.legal-inline-link{background:transparent;border:0;padding:0;color:#22639f;text-decoration:underline;cursor:pointer;font:inherit}
+@media(max-width:700px){.legal-info-grid,.legal-contact-panel{grid-template-columns:1fr}.legal-contact-panel>div+div{border-left:0;border-top:1px solid #bed7ec;padding:14px 0 0}.legal-navigation a{flex:1 1 auto;text-align:center}.legal-card{padding:18px}}
