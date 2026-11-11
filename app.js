@@ -4842,8 +4842,11 @@ function renderContacts() {
   if (selected) selectedContactId = selected.id;
   const selectedCount = allFilteredSelected ? contacts.length : selectedContactIds.size;
   const selectedInResults = allFilteredSelected ? contacts.length : contacts.filter((contact) => selectedContactIds.has(contact.id)).length;
+  const activeList = normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);
+  const activeListError = activeList?savedListPreview(activeList,normalizeSavedContactSearches(adminState.savedContactSearches)).error:"";
   return `<div class="contacts-admin contact-search-page">
     ${contactDeletionProgress ? renderContactDeletionProgress() : ""}
+    ${activeListError?`<section class="saved-list-error" role="alert">⚠ Liste indisponible : ${text(activeListError)}. Vérifiez les listes sources dans « Listes de contacts ».</section>`:""}
     <section class="contact-search-panel">
       <header class="contact-search-head">
         <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.filter((item) => item.entityType !== "institution").length} personne(s)</p></div>
