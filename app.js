@@ -3603,24 +3603,32 @@ function mergeSavedContactSearches() {
 }
 
 function renderSavedContactSearches({ standalone = false } = {}) {
-  const searches = normalizeSavedContactSearches(adminState.savedContactSearches).sort((a,b)=>Number(b.favorite)-Number(a.favorite));
+  const allSearches = normalizeSavedContactSearches(adminState.savedContactSearches).sort((a,b)=>Number(b.favorite)-Number(a.favorite));
+  const searches = standalone ? allSearches : allSearches.slice(0,8);
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
-      <div><h3>Recherche sauvegardée</h3><p>Regroupez plusieurs listes (OU), exportez un fichier Excel avec une ligne par adresse, sans modifier les contacts d'origine.</p></div>
+      <div><h3>Mes recherches</h3><p>${standalone?"Gérez, combinez et exportez vos listes.":"Retrouvez vos favoris et dernières recherches."}</p></div>
       ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
-        <label title="Inclure cette recherche dans une fusion"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Fusionner ${attr(item.name)}" /></label>
-        <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-          <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Statistiques en cours de calcul…</small>
-        </button>
-        <button type="button" class="secondary-action compact" data-contact-export-search="${attr(item.id)}">Excel adresses</button><button type="button" class="secondary-action compact" data-contact-export-people="${attr(item.id)}">Excel personnes</button><button type="button" class="secondary-action compact" data-contact-freeze-search="${attr(item.id)}" title="Créer une copie figée des contacts actuels">Figer</button><button type="button" class="secondary-action compact" data-contact-favorite-search="${attr(item.id)}" title="Ajouter ou retirer des favoris">${item.favorite?"★":"☆"}</button>
-        ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
-        <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}">Supprimer</button>
-      </div>`;
-    }).join("")}</div><label>Opération <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Combiner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+         <label class="saved-search-check" title="Inclure dans une combinaison"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Sélectionner ${attr(item.name)}" /></label>
+         <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
+           <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
+         </button>
+         <button type="button" class="saved-search-favorite" data-contact-favorite-search="${attr(item.id)}" title="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}">${item.favorite?"★":"☆"}</button>
+         <details class="saved-search-more"><summary aria-label="Actions sur ${attr(item.name)}" title="Plus d’actions">⋯</summary>
+           <div class="saved-search-actions" role="group" aria-label="Actions sur ${attr(item.name)}">
+             <button type="button" data-contact-export-search="${attr(item.id)}">Exporter par adresse</button>
+             <button type="button" data-contact-export-people="${attr(item.id)}">Exporter par personne</button>
+             <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
+             ${!item.sourceIds?.length&&!item.isSnapshot?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
+             <button type="button" class="danger" data-contact-delete-search="${attr(item.id)}">Supprimer la recherche</button>
+           </div>
+         </details>
+       </div>`;
+    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode> <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3814,11 +3822,12 @@ function renderContactDynamicFilters(filters) {
   const fields=contactFields().filter(field=>field.id!=="id"&&field.id!=="keywords"&&!primaryFields.has(field.id));
   const activeFields=new Set(Object.keys(filters.fields||{}));
   const count=contactFilterChips(filters).length;
-  const hasAdvanced=count>0 && (filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||[...activeFields].some(id=>!primaryFields.has(id)));
+  const hasAdvanced=(filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
   return `<details class="contact-filter-section contact-dynamic-search" ${hasAdvanced?'open':''}>
     <summary><strong>Recherche avancée</strong><small>${hasAdvanced?count+" paramètre(s) actif(s)":"Ajouter des critères si nécessaire"}</small></summary>
     <div class="contact-advanced-workspace">
       <p class="contact-guidance">Choisissez uniquement les critères utiles. Les champs non ajoutés ne gênent pas votre recherche.</p>
+      <div class="contact-primary-operators"><span>Type de correspondance pour les champs rapides</span>${["firstName","lastName","city"].map(id=>`<label>${text(id==="firstName"?"Prénom":id==="lastName"?"Nom":"Commune")}${renderContactOperator({id,label:id,type:"text"},filters)}</label>`).join("")}</div>
       ${renderContactAdvancedFilters(filters)}
       <div class="contact-criteria-heading"><strong>Critères supplémentaires</strong><label class="contact-add-field">Ajouter un critère <select data-contact-add-field aria-label="Choisir un critère à ajouter"><option value="">Choisir un champ…</option>${fields.map(field=>`<option value="${attr(field.id)}">${text(field.label)}</option>`).join("")}</select></label><button class="secondary-action compact" type="button" data-contact-add-field-apply>Ajouter</button></div>
       <div class="contact-filter-grid contact-criteria-list">${fields.map(field=>`<div class="contact-rule-field" data-contact-field-row="${attr(field.id)}" ${activeFields.has(field.id)?"":"hidden"}><div class="contact-rule-controls">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}<button type="button" class="contact-criterion-remove" data-contact-hide-field="${attr(field.id)}" aria-label="Retirer ${attr(field.label)}" title="Retirer ce critère">×</button></div></div>`).join("")}</div>
@@ -4609,12 +4618,12 @@ function renderContacts() {
           <label class="contact-search-field"><span>Commune</span><input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
           <button class="primary-action" type="submit">Rechercher</button>
         </div>
-        <div class="contact-primary-operators" ${["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")?"":"hidden"}><span>Opérateurs des champs principaux</span>${["firstName","lastName","city"].map(id=>`<label>${text(id==="firstName"?"Prénom":id==="lastName"?"Nom":"Commune")}${renderContactOperator({id,label:id,type:"text"},filters)}</label>`).join("")}</div>
+        
         ${renderContactDynamicFilters(filters)}
         ${renderContactFilterChips(filters)}
         ${renderContactPagination({ ...filters, page }, contacts.length)}
       </form>
-      <div class="contact-search-quick-actions"><button type="button" class="secondary-action compact" data-contact-save-search>Enregistrer la recherche</button><button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Gérer mes listes</button></div>
+      <div class="contact-search-quick-actions">${adminFilters.activeSavedContactSearchId?`<span class="contact-current-search">Recherche enregistrée active</span>`:""}<button type="button" class="secondary-action compact" data-contact-save-search>Enregistrer la recherche</button><button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Gérer mes listes</button></div>
       <div class="contact-saved-popover-wrap">
         <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
         <div id="contact-saved-popover" class="contact-saved-popover" hidden></div>
@@ -9115,7 +9124,7 @@ document.addEventListener("click", async (event) => {
 
   if(event.target.closest("[data-contact-mobile-back]")){contactMobileDetailOpen=false;renderAdmin();return;}
   const addCriterion=event.target.closest("[data-contact-add-field-apply]");
-  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input,select")?.focus();}return;}
+  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input[name],select[name^=field_]")?.focus();}return;}
   const removeChip=event.target.closest("[data-contact-remove-filter]");
   if(removeChip){
     const key=removeChip.dataset.contactRemoveFilter;
