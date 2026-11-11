@@ -104,6 +104,7 @@ let mapGradientEnabled = false;
 let communesGeojson = null;
 let mapZoom = 1;
 let selectedContactId = "";
+let contactMobileDetailOpen = false;
 let selectedContactIds = new Set();
 let selectedTrombinoscopeCategoryId = "";
 let selectedTrombinoscopePersonId = "";
@@ -3688,6 +3689,7 @@ function saveContactSearch(form, existingId = "") {
 }
 
 function loadContactSearch(id) {
+  contactMobileDetailOpen=false;
   const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
   if (!item) return;
   // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
@@ -3783,19 +3785,45 @@ function renderContactDynamicFilter(field, value = "") {
   return `<label>${label}<input name="${name}" value="${attr(value)}" placeholder="${attr(placeholder)}" /></label>`;
 }
 
+
+function contactFilterChips(filters) {
+  const chips=[];
+  if(filters.q?.trim()) chips.push({key:"q",label:"Texte : "+filters.q.trim()});
+  const labels=new Map(contactFields().map(field=>[field.id,field.label]));
+  const operatorLabels={contains:"contient",not_contains:"ne contient pas",equals:"égal à",not_equals:"différent de",starts_with:"commence par",empty:"est vide",not_empty:"est renseigné",before:"avant",after:"après"};
+  Object.entries(filters.fields||{}).forEach(([id,value])=>{
+    const op=filters.ops?.[id]||"contains";
+    chips.push({key:"field_"+id,label:(labels.get(id)||id)+" "+(operatorLabels[op]||"contient")+(["empty","not_empty"].includes(op)?"":" «"+value+"»")});
+  });
+  if(filters.keywordIds?.length) chips.push({key:"keywordIds",label:filters.keywordIds.length+" mot(s)-clé(s) ("+filters.keywordMode+")"});
+  if(filters.activityKind)chips.push({key:"activityKind",label:"Activité : "+filters.activityKind});
+  if(filters.fieldJoinMode==="OR")chips.push({key:"fieldJoinMode",label:"Champs : OU"});
+  if(filters.sortBy)chips.push({key:"sortBy",label:"Tri : "+filters.sortBy});
+  return chips;
+}
+function renderContactFilterChips(filters) {
+  const chips=contactFilterChips(filters);
+  if(!chips.length)return '<p class="contact-filter-empty">Aucun filtre actif. Tous les contacts sont affichés.</p>';
+  return '<div class="contact-active-filters" aria-label="Critères actifs"><span class="contact-chip-heading">Filtres appliqués</span>'+chips.map(chip=>
+    '<button type="button" class="contact-filter-chip" data-contact-remove-filter="'+attr(chip.key)+'" title="Retirer ce filtre">'+text(chip.label)+' <span aria-hidden="true">×</span></button>'
+  ).join("")+'<button type="button" class="contact-filter-clear" data-contact-reset-filters>Tout effacer</button></div>';
+}
+
 function renderContactDynamicFilters(filters) {
-  const primaryFields = new Set(["firstName", "lastName", "city"]);
-  // Conserver la saisie historique si une recherche enregistrée utilisait field_keywords.
-  const fields = contactFields().filter((field) => field.id !== "id" && (field.id !== "keywords" || Boolean(filters.fields?.keywords)) && !primaryFields.has(field.id));
-  const activeCount = Object.keys(filters.fields || {}).filter((id) => !primaryFields.has(id)).length + normalizedContactKeywordIds(filters.keywordIds).length;
-  return `<details class="contact-filter-section contact-dynamic-search" ${activeCount ? "open" : ""}>
-    <summary><span>Plus de critères</span><small>${activeCount ? `${activeCount} actif${activeCount > 1 ? "s" : ""}` : "Téléphone, email, catégorie, organisation…"}</small></summary>
-    ${renderContactKeywordFilters(filters)}
-    ${renderContactAdvancedFilters(filters)}
-    <div class="contact-filter-grid">${fields.map(field=>`<div class="contact-rule-field">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}</div>`).join("")}</div>
-    <div class="contact-filter-actions">
-      <button class="primary-action compact" type="submit">Appliquer les filtres</button>
-      <button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button>
+  const primaryFields=new Set(["firstName","lastName","city"]);
+  const fields=contactFields().filter(field=>field.id!=="id"&&field.id!=="keywords"&&!primaryFields.has(field.id));
+  const activeFields=new Set(Object.keys(filters.fields||{}));
+  const count=contactFilterChips(filters).length;
+  const hasAdvanced=count>0 && (filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||[...activeFields].some(id=>!primaryFields.has(id)));
+  return `<details class="contact-filter-section contact-dynamic-search" ${hasAdvanced?'open':''}>
+    <summary><strong>Recherche avancée</strong><small>${hasAdvanced?count+" paramètre(s) actif(s)":"Ajouter des critères si nécessaire"}</small></summary>
+    <div class="contact-advanced-workspace">
+      <p class="contact-guidance">Choisissez uniquement les critères utiles. Les champs non ajoutés ne gênent pas votre recherche.</p>
+      ${renderContactAdvancedFilters(filters)}
+      <div class="contact-criteria-heading"><strong>Critères supplémentaires</strong><label class="contact-add-field">Ajouter un critère <select data-contact-add-field aria-label="Choisir un critère à ajouter"><option value="">Choisir un champ…</option>${fields.map(field=>`<option value="${attr(field.id)}">${text(field.label)}</option>`).join("")}</select></label><button class="secondary-action compact" type="button" data-contact-add-field-apply>Ajouter</button></div>
+      <div class="contact-filter-grid contact-criteria-list">${fields.map(field=>`<div class="contact-rule-field" data-contact-field-row="${attr(field.id)}" ${activeFields.has(field.id)?"":"hidden"}><div class="contact-rule-controls">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}<button type="button" class="contact-criterion-remove" data-contact-hide-field="${attr(field.id)}" aria-label="Retirer ${attr(field.label)}" title="Retirer ce critère">×</button></div></div>`).join("")}</div>
+      ${renderContactKeywordFilters(filters)}
+      <div class="contact-filter-actions"><button class="primary-action compact" type="submit">Appliquer les critères</button><button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button></div>
     </div>
   </details>`;
 }
@@ -4576,27 +4604,30 @@ function renderContacts() {
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
         <div class="contact-search-main">
-          <label class="contact-search-field"><span>Prénom</span>${renderContactOperator({id:"firstName",label:"Prénom",type:"text"},filters)}<input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
-          <label class="contact-search-field"><span>Nom</span>${renderContactOperator({id:"lastName",label:"Nom",type:"text"},filters)}<input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
-          <label class="contact-search-field"><span>Commune</span>${renderContactOperator({id:"city",label:"Commune",type:"text"},filters)}<input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Prénom</span><input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Nom</span><input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
+          <label class="contact-search-field"><span>Commune</span><input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
           <button class="primary-action" type="submit">Rechercher</button>
         </div>
+        <div class="contact-primary-operators" ${["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")?"":"hidden"}><span>Opérateurs des champs principaux</span>${["firstName","lastName","city"].map(id=>`<label>${text(id==="firstName"?"Prénom":id==="lastName"?"Nom":"Commune")}${renderContactOperator({id,label:id,type:"text"},filters)}</label>`).join("")}</div>
         ${renderContactDynamicFilters(filters)}
+        ${renderContactFilterChips(filters)}
         ${renderContactPagination({ ...filters, page }, contacts.length)}
       </form>
+      <div class="contact-search-quick-actions"><button type="button" class="secondary-action compact" data-contact-save-search>Enregistrer la recherche</button><button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Gérer mes listes</button></div>
       <div class="contact-saved-popover-wrap">
         <button type="button" class="secondary-action compact contact-saved-toggle" data-contact-saved-toggle aria-expanded="false" aria-controls="contact-saved-popover">Recherches sauvegardées (${normalizeSavedContactSearches(adminState.savedContactSearches).length}) ▾</button>
         <div id="contact-saved-popover" class="contact-saved-popover" hidden></div>
       </div>
     </section>
-    <div class="admin-split contact-split">
+    <div class="admin-split contact-split ${contactMobileDetailOpen?"mobile-detail-open":""}">
       <section class="admin-list contact-result-list">
         <div class="contact-selection-toolbar">
-          <strong>${selectedCount} selectionne(s)</strong>
-          <button class="secondary-action compact" type="button" data-contact-select-page>Selectionner la page</button>
-          <button class="secondary-action compact" type="button" data-contact-select-filtered>Selectionner tous les contacts</button>
+          <strong>${selectedCount} contact(s) sélectionné(s)</strong>
+          <button class="secondary-action compact" type="button" data-contact-select-page>Sélectionner cette page</button>
+          <button class="secondary-action compact" type="button" data-contact-select-filtered>Sélectionner les ${contacts.length} résultats</button>
           <button class="secondary-action compact" type="button" data-contact-clear-selection>Vider</button>
-          ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la selection</button>` : ""}
+          ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la sélection</button>` : ""}
           <small>${selectedInResults} selectionne(s) dans les resultats filtres</small>
         </div>
         ${pageContacts.map((contact) => `<article class="contact-result-row ${selected?.id === contact.id ? "is-active" : ""}">
@@ -4604,7 +4635,7 @@ function renderContacts() {
           <button class="contact-result-card" type="button" data-open-contact="${attr(contact.id)}"><span class="contact-result-avatar" aria-hidden="true">${text(`${contact.firstName || ""} ${contact.lastName || contact.usageName || ""}`.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "?")}</span><span class="contact-result-copy"><strong>${text(contactDisplayName(contact))}</strong><span>${text([contact.email, contact.mobile || contact.phone, contact.city].filter(Boolean).join(" · "))}</span><em>${text(contact.usageName && contact.birthName && contact.usageName !== contact.birthName ? `Usage ${contact.usageName} · naissance ${contact.birthName}` : contact.category || "autre")}</em></span></button>
         </article>`).join("") || empty("Aucun contact.")}
       </section>
-      <section class="admin-detail contact-sticky-detail">${selected ? renderContactForm(selected) : empty("Aucun contact.")}</section>
+      <section class="admin-detail contact-sticky-detail"><button type="button" class="contact-mobile-back secondary-action compact" data-contact-mobile-back>← Retour aux résultats</button>${selected ? renderContactForm(selected) : empty("Aucun contact.")}</section>
     </div>
   </div>`;
 }
@@ -9019,6 +9050,7 @@ document.addEventListener("click", async (event) => {
   const openContact = event.target.closest("[data-open-contact]");
   if (openContact) {
     selectedContactId = openContact.dataset.openContact;
+    contactMobileDetailOpen = true;
     activeAdminSection = "contacts";
     renderAdmin();
   }
@@ -9081,6 +9113,22 @@ document.addEventListener("click", async (event) => {
     renderAdmin();
   }
 
+  if(event.target.closest("[data-contact-mobile-back]")){contactMobileDetailOpen=false;renderAdmin();return;}
+  const addCriterion=event.target.closest("[data-contact-add-field-apply]");
+  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input,select")?.focus();}return;}
+  const removeChip=event.target.closest("[data-contact-remove-filter]");
+  if(removeChip){
+    const key=removeChip.dataset.contactRemoveFilter;
+    if(key==="keywordIds"){adminFilters.contacts.keywordIds=[];}
+    else if(key==="activityKind"){adminFilters.contacts.activityKind="";}
+    else if(key==="fieldJoinMode"){adminFilters.contacts.fieldJoinMode="AND";}
+    else if(key==="sortBy"){adminFilters.contacts.sortBy="";adminFilters.contacts.sortOrder="asc";}
+    else if(key==="q"){adminFilters.contacts.q="";}
+    else if(key.startsWith("field_")){adminFilters.contacts[key]="";adminFilters.contacts["op_"+key.slice(6)]="contains";}
+    adminFilters.activeSavedContactSearchId="";clearContactSelection();renderAdmin();return;
+  }
+  const hideCriterion=event.target.closest("[data-contact-hide-field]");
+  if(hideCriterion){const id=hideCriterion.dataset.contactHideField;const row=hideCriterion.closest("[data-contact-field-row]");if(row){row.querySelectorAll("input,select").forEach(el=>{if(el.name==="op_"+id)el.value="contains";else el.value="";});row.hidden=true;}return;}
   const contactSaveSearch = event.target.closest("[data-contact-save-search]");
   if (contactSaveSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
@@ -9408,7 +9456,7 @@ document.addEventListener("submit", async (event) => {
     const key = filter.dataset.adminFilter;
     const values = new FormData(filter, event.submitter);
     adminFilters[key] = Object.fromEntries(values.entries());
-    if (key === "contacts") { adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
+    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }
