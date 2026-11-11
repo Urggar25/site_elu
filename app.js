@@ -24,7 +24,7 @@ const adminMenu = {
       items: [
         ["contacts", "Contacts", "search"],
         ["institutions", "Institutions", "users"],
-        ["saved-contact-searches", "Recherche sauvegardée", "search"],
+        ["saved-contact-searches", "Listes de contacts", "search"],
         ["trombinoscope", "Trombinoscope", "users"],
         ["calendar", "Calendrier", "calendar"],
         ["death", "Gestion des deces", "mail"],
@@ -3949,7 +3949,7 @@ function loadContactSearch(id) {
 function deleteContactSearch(id) {
   const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
   if (!item || !confirm(`Supprimer la recherche « ${item.name} » ? Les contacts ne seront pas supprimés.`)) return;
-  // Keep dependent merged lists intact by retaining their source criteria as a snapshot.
+  // Prevent deletion of a source used by any composite or hybrid list.
   const dependents = savedListHasDependents(id,normalizeSavedContactSearches(adminState.savedContactSearches));
   if (dependents.length) { showToast("Cette recherche est utilisée par une fusion : supprimez d’abord la fusion."); return; }
   adminState.savedContactSearches = adminState.savedContactSearches.filter((entry) => entry.id !== id);
@@ -4838,7 +4838,7 @@ function renderContacts() {
   const pageCount = Math.max(1, Math.ceil(contacts.length / filters.perPage));
   const page = Math.min(filters.page, pageCount);
   const pageContacts = contacts.slice((page - 1) * filters.perPage, page * filters.perPage);
-  const selected = contactById(selectedContactId) || contacts[0];
+  const selected = contacts.find(contact=>contact.id===selectedContactId) || contacts[0];
   if (selected) selectedContactId = selected.id;
   const selectedCount = allFilteredSelected ? contacts.length : selectedContactIds.size;
   const selectedInResults = allFilteredSelected ? contacts.length : contacts.filter((contact) => selectedContactIds.has(contact.id)).length;
