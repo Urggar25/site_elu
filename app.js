@@ -3087,7 +3087,7 @@ function mailCampaignSelection() {
 function mailSearchUsesUnsupportedRules(item) {
   if(item.sourceIds?.length||item.isSnapshot||["manual","hybrid"].includes(item.listType))return true;
   const filters=item.filters||{};
-  if(filters.fieldJoinMode==="OR"||filters.activityKind)return true;
+  if(filters.fieldJoinMode==="OR"||filters.activityKind||normalizeContactExtraRules(filters.extraRules).length)return true;
   return Object.entries(filters).some(([key,val])=>key.startsWith("op_")&&!["contains",""].includes(val));
 }
 function renderMailCampaigns() {
@@ -3417,6 +3417,25 @@ function renderContactTagEditor(contact={}) {
   </section>`;
 }
 
+function normalizeContactExtraRules(items) {
+  const fields=new Set(["firstName","lastName","city"]);
+  const ops=new Set(["contains","not_contains","equals","not_equals","starts_with","empty","not_empty"]);
+  return (Array.isArray(items)?items:[]).slice(0,30).filter(r=>r&&fields.has(r.field)).map(r=>({field:r.field,op:ops.has(r.op)?r.op:"contains",value:String(r.value??"").trim().slice(0,180)})).filter(r=>r.value||["empty","not_empty"].includes(r.op));
+}
+function contactExtraRulesFromForm(form) {
+  const data=new FormData(form),fields=data.getAll("extraRuleField"),ops=data.getAll("extraRuleOp"),values=data.getAll("extraRuleValue");
+  return normalizeContactExtraRules(fields.map((field,i)=>({field,op:ops[i],value:values[i]})));
+}
+function renderContactExtraRule(rule) {
+  const select=(name,choices,value)=>'<select name="'+name+'">'+choices.map(pair=>'<option value="'+pair[0]+'"'+(pair[0]===value?' selected':'')+'>'+pair[1]+'</option>').join("")+'</select>';
+  return '<div class="contact-rule-field" data-contact-extra-rule><div class="contact-rule-controls">'+select("extraRuleField",[["firstName","Prénom"],["lastName","Nom"],["city","Commune"]],rule.field)+select("extraRuleOp",[["contains","Contient"],["not_contains","Ne contient pas"],["equals","Est égal à"],["not_equals","Est différent de"],["starts_with","Commence par"],["empty","Est vide"],["not_empty","Est renseigné"]],rule.op)+'<input name="extraRuleValue" aria-label="Valeur du critère" value="'+attr(rule.value||"")+'" placeholder="Valeur"><button type="button" class="contact-criterion-remove" data-contact-remove-extra-rule>×</button></div></div>';
+}
+function addContactExtraRule(form,id) {
+  const list=form?.querySelector("[data-contact-criteria-list]");
+  if(!list||list.querySelectorAll("[data-contact-extra-rule]").length>=30)return;
+  list.insertAdjacentHTML("afterbegin",renderContactExtraRule({field:id,op:"contains",value:""}));
+  list.querySelector("[data-contact-extra-rule] input")?.focus();
+}
 function contactRuleMatch(contact,field,raw,op) {
   const values=Array.isArray(contact[field.id])?contact[field.id]:[contact[field.id]];
   const strings=values.map(v=>normalizeName(v??""));
@@ -3469,7 +3488,7 @@ function contactSearchFilters() {
     const value = String(filters[contactFilterKey(field)] || "").trim();
     if (value || ["empty","not_empty"].includes(filters["op_"+field.id])) fields[field.id] = value;
   });
-  return {q:String(filters.q||""),page,perPage,fields,ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
+  return {q:String(filters.q||""),page,perPage,fields,extraRules:normalizeContactExtraRules(filters.extraRules),ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
 }
 
 
@@ -3483,7 +3502,7 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
@@ -3510,6 +3529,7 @@ function savedContactSearchFilters(form) {
   filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
   filters.keywordIds = normalizedContactKeywordIds(new FormData(form).getAll("keywordIds"));
   filters.keywordMode = values.keywordMode === "AND" ? "AND" : "OR";
+  filters.extraRules=contactExtraRulesFromForm(form);
   return filters;
 }
 
@@ -3519,7 +3539,7 @@ function savedContactSearchLabel(item) {
   if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
   if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
-  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
+  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + normalizeContactExtraRules(filters.extraRules).length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
 }
 function savedListDependencies(item) {
@@ -3557,7 +3577,7 @@ function evaluateSavedList(item, searches=normalizeSavedContactSearches(adminSta
     result=filteredContacts({
       q:filters.q||"",
       fields:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("field_")).map(([key,value])=>[key.slice(6),value])),
-      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,
+      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,extraRules:filters.extraRules,
       ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),
       fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
     });
@@ -3958,7 +3978,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
+  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, extraRules:normalizeContactExtraRules(filters.extraRules), ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -3993,6 +4013,7 @@ function contactMatchesFilters(contact, filters, fieldsById) {
   if(!contactMatchesKeywords(contact,filters.keywordIds,filters.keywordMode))return false;
   if(filters.activityKind&&!contactLinkedActivity(contact,filters.activityKind))return false;
   const tests=Object.entries(filters.fields||{}).map(([id,val])=>{const field=fieldsById.get(id);return !field||contactRuleMatch(contact,field,val,filters.ops?.[id]||"contains");});
+  normalizeContactExtraRules(filters.extraRules).forEach(rule=>{const field=fieldsById.get(rule.field);if(field)tests.push(contactRuleMatch(contact,field,rule.value,rule.op));});
   return filters.fieldJoinMode==="OR"?(!tests.length||tests.some(Boolean)):tests.every(Boolean);
 }
 
@@ -4041,6 +4062,7 @@ function contactFilterChips(filters) {
     const op=filters.ops?.[id]||"contains";
     chips.push({key:"field_"+id,label:(labels.get(id)||id)+" "+(operatorLabels[op]||"contient")+(["empty","not_empty"].includes(op)?"":" «"+value+"»")});
   });
+  normalizeContactExtraRules(filters.extraRules).forEach((rule,i)=>chips.push({key:"extraRule_"+i,label:(labels.get(rule.field)||rule.field)+" : "+rule.value}));
   if(filters.keywordIds?.length) chips.push({key:"keywordIds",label:filters.keywordIds.length+" mot(s)-clé(s) ("+filters.keywordMode+")"});
   if(filters.activityKind)chips.push({key:"activityKind",label:"Activité : "+filters.activityKind});
   if(filters.fieldJoinMode==="OR")chips.push({key:"fieldJoinMode",label:"Champs : OU"});
@@ -4058,17 +4080,18 @@ function renderContactFilterChips(filters) {
 function renderContactDynamicFilters(filters) {
   const primaryFields=new Set(["firstName","lastName","city"]);
   const fields=contactFields().filter(field=>field.id!=="id"&&field.id!=="keywords"&&!primaryFields.has(field.id));
+  const primaryChoices=contactFields().filter(field=>primaryFields.has(field.id));
   const activeFields=new Set(Object.keys(filters.fields||{}));
   const count=contactFilterChips(filters).length;
-  const hasAdvanced=(filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
+  const hasAdvanced=(normalizeContactExtraRules(filters.extraRules).length>0||filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
   return `<details class="contact-filter-section contact-dynamic-search" ${hasAdvanced?'open':''}>
     <summary><strong>Recherche avancée</strong><small>${hasAdvanced?count+" paramètre(s) actif(s)":"Ajouter des critères si nécessaire"}</small></summary>
     <div class="contact-advanced-workspace">
       <p class="contact-guidance">Choisissez uniquement les critères utiles. Les champs non ajoutés ne gênent pas votre recherche.</p>
       <div class="contact-primary-operators"><span>Type de correspondance pour les champs rapides</span>${["firstName","lastName","city"].map(id=>`<label>${text(id==="firstName"?"Prénom":id==="lastName"?"Nom":"Commune")}${renderContactOperator({id,label:id,type:"text"},filters)}</label>`).join("")}</div>
       ${renderContactAdvancedFilters(filters)}
-      <div class="contact-criteria-heading"><strong>Critères supplémentaires</strong><label class="contact-add-field">Ajouter un critère <select data-contact-add-field aria-label="Choisir un critère à ajouter"><option value="">Choisir un champ…</option>${fields.map(field=>`<option value="${attr(field.id)}">${text(field.label)}</option>`).join("")}</select></label><button class="secondary-action compact" type="button" data-contact-add-field-apply>Ajouter</button></div>
-      <div class="contact-filter-grid contact-criteria-list">${fields.map(field=>`<div class="contact-rule-field" data-contact-field-row="${attr(field.id)}" ${activeFields.has(field.id)?"":"hidden"}><div class="contact-rule-controls">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}<button type="button" class="contact-criterion-remove" data-contact-hide-field="${attr(field.id)}" aria-label="Retirer ${attr(field.label)}" title="Retirer ce critère">×</button></div></div>`).join("")}</div>
+      <div class="contact-criteria-heading"><strong>Critères supplémentaires</strong><label class="contact-add-field">Ajouter un critère <select data-contact-add-field aria-label="Choisir un critère à ajouter"><option value="">Choisir un champ…</option>${[...primaryChoices,...fields].map(field=>`<option value="${attr(field.id)}">${text(field.label)}</option>`).join("")}</select></label><button class="secondary-action compact" type="button" data-contact-add-field-apply>Ajouter</button></div>
+      <div class="contact-filter-grid contact-criteria-list" data-contact-criteria-list>${normalizeContactExtraRules(filters.extraRules).map(renderContactExtraRule).join("")}${fields.map(field=>`<div class="contact-rule-field" data-contact-field-row="${attr(field.id)}" ${activeFields.has(field.id)?"":"hidden"}><div class="contact-rule-controls">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}<button type="button" class="contact-criterion-remove" data-contact-hide-field="${attr(field.id)}" aria-label="Retirer ${attr(field.label)}" title="Retirer ce critère">×</button></div></div>`).join("")}</div>
       <div class="contact-filter-actions"><button class="primary-action compact" type="submit">Appliquer les critères</button><button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button></div>
     </div>
   </details>`;
@@ -9514,7 +9537,7 @@ document.addEventListener("click", async (event) => {
 
   if(event.target.closest("[data-contact-mobile-back]")){contactMobileDetailOpen=false;renderAdmin();return;}
   const addCriterion=event.target.closest("[data-contact-add-field-apply]");
-  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input[name],select[name^=field_]")?.focus();}return;}
+  if(addCriterion){const form=document.querySelector('[data-admin-filter="contacts"]');const id=form?.querySelector("[data-contact-add-field]")?.value;if(["firstName","lastName","city"].includes(id)){addContactExtraRule(form,id);return;}const row=id?form.querySelector('[data-contact-field-row="'+id+'"]'):null;if(row){row.hidden=false;row.querySelector("input[name],select[name^=field_]")?.focus();}return;}
   const removeChip=event.target.closest("[data-contact-remove-filter]");
   if(removeChip){
     const key=removeChip.dataset.contactRemoveFilter;
@@ -9523,9 +9546,12 @@ document.addEventListener("click", async (event) => {
     else if(key==="fieldJoinMode"){adminFilters.contacts.fieldJoinMode="AND";}
     else if(key==="sortBy"){adminFilters.contacts.sortBy="";adminFilters.contacts.sortOrder="asc";}
     else if(key==="q"){adminFilters.contacts.q="";}
+    else if(key.startsWith("extraRule_")){adminFilters.contacts.extraRules=normalizeContactExtraRules(adminFilters.contacts.extraRules).filter((_,i)=>i!==Number(key.slice(10)));}
     else if(key.startsWith("field_")){adminFilters.contacts[key]="";adminFilters.contacts["op_"+key.slice(6)]="contains";}
     adminFilters.activeSavedContactSearchId="";clearContactSelection();renderAdmin();return;
   }
+  const removeExtra=event.target.closest("[data-contact-remove-extra-rule]");
+  if(removeExtra){removeExtra.closest("[data-contact-extra-rule]")?.remove();return;}
   const hideCriterion=event.target.closest("[data-contact-hide-field]");
   if(hideCriterion){const id=hideCriterion.dataset.contactHideField;const row=hideCriterion.closest("[data-contact-field-row]");if(row){row.querySelectorAll("input,select").forEach(el=>{if(el.name==="op_"+id)el.value="contains";else el.value="";});row.hidden=true;}return;}
   const tagEditor=event.target.closest("[data-contact-tag-editor]");
@@ -9963,7 +9989,7 @@ document.addEventListener("submit", async (event) => {
     const key = filter.dataset.adminFilter;
     const values = new FormData(filter, event.submitter);
     adminFilters[key] = Object.fromEntries(values.entries());
-    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
+    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.extraRules=contactExtraRulesFromForm(filter); adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }
