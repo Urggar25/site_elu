@@ -11641,3 +11641,42 @@ body.admin-mode .contact-universal-input button {width:100%}
 body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-search-panel {display:none}
 body.admin-mode .contact-search-page:has(.contact-split.mobile-detail-open) .contact-split {margin-top:0}
 }
+
+
+/* Recherche dynamique unifiée des mots-clés */
+body.admin-mode .contact-keyword-picker {display:grid;gap:12px;margin:0;padding:16px;border:1px solid #d5dfeb;border-radius:12px;background:#fbfdff;min-width:0}
+body.admin-mode .contact-keyword-picker legend {padding:0 8px;font-weight:800;color:#243e65;font-size:.92rem}
+body.admin-mode .contact-keyword-intro {margin:0;color:#596a80;font-size:.84rem;line-height:1.45}
+body.admin-mode .contact-keyword-searchbar {display:flex;gap:12px;align-items:end;justify-content:space-between;flex-wrap:wrap}
+body.admin-mode .contact-keyword-searchbar>label {display:grid;gap:6px;flex:1 1 280px;font-size:.82rem;font-weight:750;min-width:0}
+body.admin-mode .contact-keyword-searchbar input {width:100%;box-sizing:border-box;min-height:44px;padding:10px 12px;border:1px solid #bdcbe0;border-radius:8px;background:#fff;font-size:.93rem}
+body.admin-mode .contact-keyword-total {font-size:.78rem;color:#62738a;white-space:nowrap;padding-bottom:9px}
+body.admin-mode .contact-keyword-selected {display:flex;gap:7px;align-items:center;flex-wrap:wrap;min-height:25px}
+body.admin-mode .contact-keyword-selected>small {font-size:.82rem;color:#7a889b}
+body.admin-mode .contact-keyword-pill {display:inline-flex;align-items:center;gap:8px;border-radius:99px;padding:7px 11px;background:#eaf2fc;border:1px solid #c1d3ec;color:#234f87;cursor:pointer;font-size:.83rem;font-weight:750;max-width:100%}
+body.admin-mode .contact-keyword-pill::before {content:"";width:8px;height:8px;border-radius:50%;background:var(--keyword-color,#6385ab)}
+body.admin-mode .contact-keyword-pill>input {position:absolute;width:1px;height:1px;opacity:0}
+body.admin-mode .contact-keyword-pill:focus-within {outline:2px solid #2d6fb6;outline-offset:2px}
+body.admin-mode .contact-keyword-pill>span:nth-last-child(1) {font-size:1rem;line-height:1}
+body.admin-mode .contact-keyword-mode {display:flex;gap:8px;flex-wrap:wrap}
+body.admin-mode .contact-keyword-mode label {min-height:38px;border:1px solid #d4dfed;background:#fff;padding:7px 12px;border-radius:8px;display:flex;align-items:center;gap:6px;cursor:pointer}
+body.admin-mode .contact-keyword-mode label:has(input:checked) {background:#eaf2ff;border-color:#80a5d6}
+body.admin-mode .contact-keyword-mode small {font-size:.76rem;color:#61728a}
+body.admin-mode .contact-keyword-results {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:270px;overflow:auto;align-content:start;padding:3px}
+body.admin-mode .contact-keyword-results .contact-keyword-option {display:flex;align-items:center;gap:8px;padding:8px 10px;min-width:0;min-height:40px;border:1px solid #e0e6ee;background:#fff;border-radius:8px;cursor:pointer}
+body.admin-mode .contact-keyword-results .contact-keyword-option:hover {background:#f0f6ff;border-color:#b8cce6}
+body.admin-mode .contact-keyword-results .contact-keyword-option[hidden],body.admin-mode [data-contact-keyword-no-match][hidden] {display:none!important}
+body.admin-mode .contact-keyword-label {flex:1;overflow-wrap:anywhere;font-size:.84rem}
+body.admin-mode .contact-keyword-results .contact-keyword-option small {font-size:.72rem;color:#667890;white-space:nowrap}
+body.admin-mode .contact-keyword-no-match {grid-column:1/-1;margin:0;color:#68798f;font-size:.85rem}
+body.admin-mode .contact-keyword-create {display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:10px;border-top:1px solid #e2e8f1}
+body.admin-mode .contact-keyword-create>span {font-size:.83rem;font-weight:700}
+body.admin-mode .contact-keyword-create>small {flex:1 1 100%;font-size:.76rem;color:#65768d}
+body.admin-mode .contact-keyword-create button:disabled {opacity:.45;cursor:not-allowed}
+@media(max-width:700px){
+ body.admin-mode .contact-keyword-picker {padding:12px;gap:10px}
+ body.admin-mode .contact-keyword-results {grid-template-columns:1fr;max-height:240px}
+ body.admin-mode .contact-keyword-mode label {flex:1 1 120px}
+ body.admin-mode .contact-keyword-searchbar {display:grid}
+ body.admin-mode .contact-keyword-create button {width:100%}
+}
