@@ -3082,6 +3082,12 @@ function mailCampaignSelection() {
   const values = new FormData(form);
   return { searchId: String(values.get("searchId") || ""), templateId: String(values.get("templateId") || ""), consentConfirmed: values.get("consentConfirmed") === "1" };
 }
+function mailSearchUsesUnsupportedRules(item) {
+  if(item.sourceIds?.length||item.isSnapshot)return true;
+  const filters=item.filters||{};
+  if(filters.fieldJoinMode==="OR"||filters.activityKind)return true;
+  return Object.entries(filters).some(([key,val])=>key.startsWith("op_")&&!["contains",""].includes(val));
+}
 function renderMailCampaigns() {
   const templates = normalizeMailTemplates(adminState.mailTemplates);
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
@@ -3096,7 +3102,7 @@ function renderMailCampaigns() {
     <form class="admin-form mail-campaign-form" data-mail-campaign-form>
       <label>Liste de contacts (recherche enregistrée)
         <select name="searchId" required><option value="">Choisir une liste…</option>
-        ${searches.map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
+        ${searches.filter(item=>!mailSearchUsesUnsupportedRules(item)).map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
       </label>
       <label>Modèle de mail
         <select name="templateId" required><option value="">Choisir un modèle…</option>
