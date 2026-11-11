@@ -11531,3 +11531,6 @@ body.admin-mode .institution-edit label { display: grid; gap: 5px; font-size: .8
 body.admin-mode .institution-edit input { min-height: 38px; padding: 8px 10px; border: 1px solid #ccd8e9; border-radius: 6px; }
 body.admin-mode .institutions-page details { margin-top: 18px; padding: 14px; border: 1px solid #d9e4f2; border-radius: 9px; }
 body.admin-mode .institutions-page summary { font-weight: 750; cursor: pointer; }
+
+/* Advanced contact search */
+.contact-rule-field{display:flex;gap:.5rem;align-items:end;min-width:0}.contact-rule-field>select{max-width:11rem;flex:0 0 auto}.contact-rule-field>label{flex:1;min-width:0}.contact-advanced-filters{border:1px solid var(--border-color,#c8d0db);border-radius:12px;padding:12px;margin:12px 0}.contact-advanced-filters legend{padding:0 8px;font-weight:600}@media(max-width:700px){.contact-rule-field{flex-wrap:wrap}.contact-rule-field>select{max-width:100%;width:100%}}
