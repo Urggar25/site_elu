@@ -3490,8 +3490,12 @@ function normalizeSavedContactSearches(items) {
     mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR",
     isSnapshot: item.isSnapshot === true,
     snapshotIds: Array.isArray(item.snapshotIds) ? [...new Set(item.snapshotIds.filter(id=>typeof id==="string"))] : [],
-    favorite: item.favorite === true
-  })).slice(0, 200);
+    favorite: item.favorite === true,
+    listType: ["manual","hybrid"].includes(item.listType) ? item.listType : "dynamic",
+    baseId: typeof item.baseId === "string" ? item.baseId : "",
+    includeIds: Array.isArray(item.includeIds) ? [...new Set(item.includeIds.filter(id=>typeof id==="string"))] : [],
+    excludeIds: Array.isArray(item.excludeIds) ? [...new Set(item.excludeIds.filter(id=>typeof id==="string"))] : []
+  }));
 }
 
 function savedContactSearchFilters(form) {
@@ -3509,31 +3513,78 @@ function savedContactSearchFilters(form) {
 }
 
 function savedContactSearchLabel(item) {
+  if (item.listType === "manual") return "Liste manuelle";
+  if (item.listType === "hybrid") return "Liste hybride · base + ajouts − exclusions";
   if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
   if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
   const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
 }
-
-function savedSearchContacts(item, searches = normalizeSavedContactSearches(adminState.savedContactSearches), visited = new Set()) {
-  if (!item || visited.has(item.id)) return [];
-  const next = new Set(visited);
-  next.add(item.id);
-  if (item.isSnapshot) return item.snapshotIds.map(id=>contactById(id)).filter(Boolean);
-  if (item.sourceIds?.length) {
-    const byId = new Map(searches.map((entry) => [entry.id, entry]));
-    const lists=item.sourceIds.map(id=>savedSearchContacts(byId.get(id),searches,next));
-    if(item.mergeMode==="AND"){const sets=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));return (lists[0]||[]).filter(c=>sets.every(set=>set.has(c.id)));}
-    if(item.mergeMode==="EXCEPT"){const rejected=new Set(lists.slice(1).flat().map(c=>c.id));return (lists[0]||[]).filter(c=>!rejected.has(c.id));}
-    return [...new Map(lists.flat().map(c=>[c.id,c])).values()];
+function savedListDependencies(item) {
+  if (!item) return [];
+  if(item.listType==="hybrid")return item.baseId?[item.baseId]:[];
+  return item.sourceIds||[];
+}
+// Centralized evaluation: used by lists, previews and exports.
+function evaluateSavedList(item, searches=normalizeSavedContactSearches(adminState.savedContactSearches), memo=new Map(), visiting=new Set()) {
+  if(!item)throw new Error("Une liste source n'existe plus.");
+  if(memo.has(item.id))return memo.get(item.id);
+  if(visiting.has(item.id))throw new Error("Dépendance circulaire entre les listes.");
+  const next=new Set(visiting);next.add(item.id);
+  const lookup=new Map(searches.map(entry=>[entry.id,entry]));
+  const get=id=>evaluateSavedList(lookup.get(id),searches,memo,next);
+  const resolve=ids=>ids.map(id=>contactById(id)).filter(c=>c&&c.entityType!=="institution");
+  let result;
+  if(item.listType==="manual")result=resolve(item.includeIds);
+  else if(item.listType==="hybrid"){
+    if(!item.baseId)throw new Error("Cette liste hybride n'a pas de source.");
+    const excluded=new Set(item.excludeIds);
+    result=[...new Map([...get(item.baseId),...resolve(item.includeIds)].filter(c=>!excluded.has(c.id)).map(c=>[c.id,c])).values()];
+  }else if(item.isSnapshot)result=resolve(item.snapshotIds);
+  else if(item.sourceIds?.length){
+    const lists=item.sourceIds.map(get);
+    if(item.mergeMode==="AND"){
+      const rest=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));
+      result=(lists[0]||[]).filter(c=>rest.every(set=>set.has(c.id)));
+    }else if(item.mergeMode==="EXCEPT"){
+      const remove=new Set(lists.slice(1).flat().map(c=>c.id));
+      result=(lists[0]||[]).filter(c=>!remove.has(c.id));
+    }else result=[...new Map(lists.flat().map(c=>[c.id,c])).values()];
+  }else{
+    const filters=item.filters||{};
+    result=filteredContacts({
+      q:filters.q||"",
+      fields:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("field_")).map(([key,value])=>[key.slice(6),value])),
+      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,
+      ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),
+      fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
+    });
   }
-  const filters = item.filters || {};
-  return filteredContacts({
-    q: filters.q || "",
-    fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-    keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
-  });
+  memo.set(item.id,result);
+  return result;
+}
+function savedSearchContacts(item, searches=normalizeSavedContactSearches(adminState.savedContactSearches)) {
+  try{return evaluateSavedList(item,searches);}
+  catch(error){console.warn("Liste de contacts invalide :",error);return [];}
+}
+function savedListHasDependents(id,searches) {
+  return searches.filter(entry=>savedListDependencies(entry).includes(id));
+}
+function savedListWouldCycle(id, sources, searches) {
+  const graph=new Map(searches.map(item=>[item.id,savedListDependencies(item)]));
+  graph.set(id,sources);
+  const visit=(node,stack=new Set())=>{
+    if(stack.has(node))return true;
+    const children=graph.get(node)||[];
+    const next=new Set(stack);next.add(node);
+    return children.some(child=>visit(child,next));
+  };
+  return visit(id);
+}
+function savedListPreview(item,searches) {
+  try {return {contacts:evaluateSavedList(item,searches),error:""};}
+  catch(error){return {contacts:[],error:error.message||"Liste invalide"};}
 }
 
 function savedSearchExportPreview(contacts) {
@@ -3607,7 +3658,9 @@ function freezeSavedContactSearch(id) {
   const list=normalizeSavedContactSearches(adminState.savedContactSearches);
   const src=list.find(item=>item.id===id);
   if(!src)return;
-  const ids=savedSearchContacts(src,list).map(c=>c.id);
+  const preview=savedListPreview(src,list);
+  if(preview.error){showToast(preview.error);return;}
+  const ids=preview.contacts.map(c=>c.id);
   const name=(src.name+" — figée").slice(0,120),now=new Date().toISOString();
   adminState.savedContactSearches=[{id:crypto.randomUUID(),name,isSnapshot:true,snapshotIds:ids,filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId},...list];
   saveAdminState("creation","recherche contact enregistree",name);
@@ -3673,7 +3726,7 @@ function renderSavedContactSearches({ standalone = false } = {}) {
            </div>
          </details>
        </div>`;
-    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode> <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3733,7 +3786,8 @@ function saveContactSearch(form, existingId = "") {
     filters: savedContactSearchFilters(form),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    createdBy: existing?.createdBy || currentUserId
+    createdBy: existing?.createdBy || currentUserId,
+    favorite: existing?.favorite || false
   };
   adminState.savedContactSearches = existing ? current.map((entry) => entry.id === existing.id ? item : entry) : [item, ...current];
   adminFilters.activeSavedContactSearchId = item.id;
@@ -3747,7 +3801,7 @@ function loadContactSearch(id) {
   if (!item) return;
   // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
   clearContactSelection();
-  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
+  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot||["manual","hybrid"].includes(item.listType)) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
   adminFilters.activeSavedContactSearchId = item.id;
   activeAdminSection = "contacts";
   renderAdmin();
@@ -3757,7 +3811,7 @@ function deleteContactSearch(id) {
   const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
   if (!item || !confirm(`Supprimer la recherche « ${item.name} » ? Les contacts ne seront pas supprimés.`)) return;
   // Keep dependent merged lists intact by retaining their source criteria as a snapshot.
-  const dependents = normalizeSavedContactSearches(adminState.savedContactSearches).filter((entry) => entry.sourceIds?.includes(id));
+  const dependents = savedListHasDependents(id,normalizeSavedContactSearches(adminState.savedContactSearches));
   if (dependents.length) { showToast("Cette recherche est utilisée par une fusion : supprimez d’abord la fusion."); return; }
   adminState.savedContactSearches = adminState.savedContactSearches.filter((entry) => entry.id !== id);
   if (adminFilters.activeSavedContactSearchId === id) adminFilters.activeSavedContactSearchId = "";
@@ -3765,7 +3819,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
+  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -3807,7 +3861,7 @@ function filteredContacts(filters = contactSearchFilters()) {
   if (arguments.length === 0 && adminFilters.activeSavedContactSearchId) {
     const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
-    if (active?.sourceIds?.length||active?.isSnapshot) return savedSearchContacts(active, searches);
+    if (active?.sourceIds?.length||active?.isSnapshot||["manual","hybrid"].includes(active?.listType)) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
   const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
