@@ -4612,11 +4612,12 @@ function renderContacts() {
         <button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button>
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
+        <div class="contact-universal-search"><label for="contact-query-input">Recherche dans tous les champs</label><div class="contact-universal-input"><input id="contact-query-input" name="q" type="search" autocomplete="off" value="${attr(filters.q||"")}" placeholder="Nom, prénom, organisation, téléphone, mot-clé…"/><button class="primary-action" type="submit">Rechercher</button></div></div>
         <div class="contact-search-main">
           <label class="contact-search-field"><span>Prénom</span><input name="field_firstName" value="${attr(filters.fields.firstName || "")}" placeholder="Prénom" autocomplete="off" /></label>
           <label class="contact-search-field"><span>Nom</span><input name="field_lastName" value="${attr(filters.fields.lastName || "")}" placeholder="Nom" autocomplete="off" /></label>
           <label class="contact-search-field"><span>Commune</span><input name="field_city" value="${attr(filters.fields.city || "")}" placeholder="Commune" autocomplete="off" /></label>
-          <button class="primary-action" type="submit">Rechercher</button>
+          <span class="contact-quick-help">Affinez par prénom, nom ou commune.</span>
         </div>
         
         ${renderContactDynamicFilters(filters)}
