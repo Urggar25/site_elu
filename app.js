@@ -24,7 +24,7 @@ const adminMenu = {
       items: [
         ["contacts", "Contacts", "search"],
         ["institutions", "Institutions", "users"],
-        ["saved-contact-searches", "Recherche sauvegardée", "search"],
+        ["saved-contact-searches", "Listes de contacts", "search"],
         ["trombinoscope", "Trombinoscope", "users"],
         ["calendar", "Calendrier", "calendar"],
         ["death", "Gestion des deces", "mail"],
@@ -1493,7 +1493,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
-  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "contactKeywords", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
+  if (normalized.includes("contact") && !normalized.includes("champ") && !normalized.includes("mot cle")) return ["localContacts", "contactKeywords", "savedContactSearches", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents"];
   if (normalized.includes("champ contact")) return ["contactFields", "deletedContactFields"];
   if (normalized.includes("mot cle contact")) return ["contactKeywords"];
   if (normalized.includes("dossier deces")) return ["deathCases", "localContacts"];
@@ -2475,6 +2475,7 @@ function renderAdmin() {
   mountDocumentPdfPreview();
   if (activeAdminSection === "saved-contact-searches") {
     hydrateSavedContactStats(document.querySelector("#admin-view .saved-contact-searches"));
+    refreshSavedListBuilder(document.querySelector("[data-saved-list-builder]"));
   }
   if (focusCalendarBodyAfterRender) {
     focusCalendarBodyAfterRender = false;
@@ -3084,7 +3085,7 @@ function mailCampaignSelection() {
   return { searchId: String(values.get("searchId") || ""), templateId: String(values.get("templateId") || ""), consentConfirmed: values.get("consentConfirmed") === "1" };
 }
 function mailSearchUsesUnsupportedRules(item) {
-  if(item.sourceIds?.length||item.isSnapshot)return true;
+  if(item.sourceIds?.length||item.isSnapshot||["manual","hybrid"].includes(item.listType))return true;
   const filters=item.filters||{};
   if(filters.fieldJoinMode==="OR"||filters.activityKind)return true;
   return Object.entries(filters).some(([key,val])=>key.startsWith("op_")&&!["contains",""].includes(val));
@@ -3490,8 +3491,12 @@ function normalizeSavedContactSearches(items) {
     mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR",
     isSnapshot: item.isSnapshot === true,
     snapshotIds: Array.isArray(item.snapshotIds) ? [...new Set(item.snapshotIds.filter(id=>typeof id==="string"))] : [],
-    favorite: item.favorite === true
-  })).slice(0, 200);
+    favorite: item.favorite === true,
+    listType: ["manual","hybrid"].includes(item.listType) ? item.listType : "dynamic",
+    baseId: typeof item.baseId === "string" ? item.baseId : "",
+    includeIds: Array.isArray(item.includeIds) ? [...new Set(item.includeIds.filter(id=>typeof id==="string"))] : [],
+    excludeIds: Array.isArray(item.excludeIds) ? [...new Set(item.excludeIds.filter(id=>typeof id==="string"))] : []
+  }));
 }
 
 function savedContactSearchFilters(form) {
@@ -3509,31 +3514,78 @@ function savedContactSearchFilters(form) {
 }
 
 function savedContactSearchLabel(item) {
+  if (item.listType === "manual") return "Liste manuelle";
+  if (item.listType === "hybrid") return "Liste hybride · base + ajouts − exclusions";
   if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
   if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
   const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
 }
-
-function savedSearchContacts(item, searches = normalizeSavedContactSearches(adminState.savedContactSearches), visited = new Set()) {
-  if (!item || visited.has(item.id)) return [];
-  const next = new Set(visited);
-  next.add(item.id);
-  if (item.isSnapshot) return item.snapshotIds.map(id=>contactById(id)).filter(Boolean);
-  if (item.sourceIds?.length) {
-    const byId = new Map(searches.map((entry) => [entry.id, entry]));
-    const lists=item.sourceIds.map(id=>savedSearchContacts(byId.get(id),searches,next));
-    if(item.mergeMode==="AND"){const sets=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));return (lists[0]||[]).filter(c=>sets.every(set=>set.has(c.id)));}
-    if(item.mergeMode==="EXCEPT"){const rejected=new Set(lists.slice(1).flat().map(c=>c.id));return (lists[0]||[]).filter(c=>!rejected.has(c.id));}
-    return [...new Map(lists.flat().map(c=>[c.id,c])).values()];
+function savedListDependencies(item) {
+  if (!item) return [];
+  if(item.listType==="hybrid")return item.baseId?[item.baseId]:[];
+  return item.sourceIds||[];
+}
+// Centralized evaluation: used by lists, previews and exports.
+function evaluateSavedList(item, searches=normalizeSavedContactSearches(adminState.savedContactSearches), memo=new Map(), visiting=new Set()) {
+  if(!item)throw new Error("Une liste source n'existe plus.");
+  if(memo.has(item.id))return memo.get(item.id);
+  if(visiting.has(item.id))throw new Error("Dépendance circulaire entre les listes.");
+  const next=new Set(visiting);next.add(item.id);
+  const lookup=new Map(searches.map(entry=>[entry.id,entry]));
+  const get=id=>evaluateSavedList(lookup.get(id),searches,memo,next);
+  const resolve=ids=>ids.map(id=>contactById(id)).filter(c=>c&&c.entityType!=="institution");
+  let result;
+  if(item.listType==="manual")result=resolve(item.includeIds);
+  else if(item.listType==="hybrid"){
+    if(!item.baseId)throw new Error("Cette liste hybride n'a pas de source.");
+    const excluded=new Set(item.excludeIds);
+    result=[...new Map([...get(item.baseId),...resolve(item.includeIds)].filter(c=>!excluded.has(c.id)).map(c=>[c.id,c])).values()];
+  }else if(item.isSnapshot)result=resolve(item.snapshotIds);
+  else if(item.sourceIds?.length){
+    const lists=item.sourceIds.map(get);
+    if(item.mergeMode==="AND"){
+      const rest=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));
+      result=(lists[0]||[]).filter(c=>rest.every(set=>set.has(c.id)));
+    }else if(item.mergeMode==="EXCEPT"){
+      const remove=new Set(lists.slice(1).flat().map(c=>c.id));
+      result=(lists[0]||[]).filter(c=>!remove.has(c.id));
+    }else result=[...new Map(lists.flat().map(c=>[c.id,c])).values()];
+  }else{
+    const filters=item.filters||{};
+    result=filteredContacts({
+      q:filters.q||"",
+      fields:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("field_")).map(([key,value])=>[key.slice(6),value])),
+      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,
+      ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),
+      fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
+    });
   }
-  const filters = item.filters || {};
-  return filteredContacts({
-    q: filters.q || "",
-    fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-    keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
-  });
+  memo.set(item.id,result);
+  return result;
+}
+function savedSearchContacts(item, searches=normalizeSavedContactSearches(adminState.savedContactSearches)) {
+  try{return evaluateSavedList(item,searches);}
+  catch(error){console.warn("Liste de contacts invalide :",error);return [];}
+}
+function savedListHasDependents(id,searches) {
+  return searches.filter(entry=>savedListDependencies(entry).includes(id));
+}
+function savedListWouldCycle(id, sources, searches) {
+  const graph=new Map(searches.map(item=>[item.id,savedListDependencies(item)]));
+  graph.set(id,sources);
+  const visit=(node,stack=new Set())=>{
+    if(stack.has(node))return true;
+    const children=graph.get(node)||[];
+    const next=new Set(stack);next.add(node);
+    return children.some(child=>visit(child,next));
+  };
+  return visit(id);
+}
+function savedListPreview(item,searches) {
+  try {return {contacts:evaluateSavedList(item,searches),error:""};}
+  catch(error){return {contacts:[],error:error.message||"Liste invalide"};}
 }
 
 function savedSearchExportPreview(contacts) {
@@ -3583,7 +3635,9 @@ function exportSavedContactSearch(id) {
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const item = searches.find((entry) => entry.id === id);
   if (!item) return;
-  const contacts = savedSearchContacts(item, searches);
+  const validated=savedListPreview(item,searches);
+  if(validated.error){showToast(validated.error);return;}
+  const contacts=validated.contacts;
   const result = savedSearchExportPreview(contacts);
   const sourceOccurrences = (entry, visited = new Set()) => {
     if (visited.has(entry.id)) return [];
@@ -3596,7 +3650,7 @@ function exportSavedContactSearch(id) {
         })
       : savedSearchContacts(entry, searches);
   };
-  const overlaps = Math.max(0, sourceOccurrences(item).length - contacts.length);
+  const overlaps = item.sourceIds?.length && item.mergeMode === "OR" ? Math.max(0, sourceOccurrences(item).length - contacts.length) : 0;
   const rows = [["Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"], ...result.rows];
   downloadFile("recherche-" + slugify(item.name) + ".xlsx", participantWorkbookBytes(rows),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -3607,7 +3661,9 @@ function freezeSavedContactSearch(id) {
   const list=normalizeSavedContactSearches(adminState.savedContactSearches);
   const src=list.find(item=>item.id===id);
   if(!src)return;
-  const ids=savedSearchContacts(src,list).map(c=>c.id);
+  const preview=savedListPreview(src,list);
+  if(preview.error){showToast(preview.error);return;}
+  const ids=preview.contacts.map(c=>c.id);
   const name=(src.name+" — figée").slice(0,120),now=new Date().toISOString();
   adminState.savedContactSearches=[{id:crypto.randomUUID(),name,isSnapshot:true,snapshotIds:ids,filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId},...list];
   saveAdminState("creation","recherche contact enregistree",name);
@@ -3621,30 +3677,157 @@ function favoriteSavedContactSearch(id) {
 function exportSavedContactPeople(id) {
   const list=normalizeSavedContactSearches(adminState.savedContactSearches),item=list.find(e=>e.id===id);
   if(!item)return;
-  const contacts=savedSearchContacts(item,list),headers=contactFields().map(f=>f.id);
+  const validated=savedListPreview(item,list);
+  if(validated.error){showToast(validated.error);return;}
+  const contacts=validated.contacts,headers=contactFields().map(f=>f.id);
   const rows=[headers,...contacts.map(c=>headers.map(key=>Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
   downloadFile("personnes-"+slugify(item.name)+".xlsx",participantWorkbookBytes(rows),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   showToast(contacts.length+" personnes exportées, une ligne par fiche.");
 }
 function mergeSavedContactSearches() {
-  const checked = [...document.querySelectorAll("[data-saved-search-merge]:checked")].map((input) => input.value);
-  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
-  const ids = [...new Set(checked)].filter((id) => searches.some((item) => item.id === id));
-  if (ids.length < 2) { showToast("Sélectionnez au moins deux recherches à fusionner."); return; }
-  const name = prompt("Nom de la nouvelle recherche fusionnée :");
-  if (name === null) return;
-  const cleanName = name.trim().slice(0, 120);
-  if (!cleanName) { showToast("Saisissez un nom."); return; }
-  const now = new Date().toISOString();
-  const mergeMode=document.querySelector("[data-saved-search-mode]")?.value||"OR";
-  const item = { id: crypto.randomUUID(), name: cleanName, sourceIds: ids, mergeMode, filters: {},
-    createdAt: now, updatedAt: now, createdBy: currentUserId };
-  adminState.savedContactSearches = [item, ...searches];
-  adminFilters.activeSavedContactSearchId = item.id;
-  adminFilters.contacts = { perPage: 100, page: 1 };
-  clearContactSelection();
-  saveAdminState("fusion", "recherche contact enregistree", cleanName);
-  showToast("Recherche fusionnée enregistrée.");
+  const root=document.querySelector(".saved-search-combine");
+  const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+  const checked=[...root?.querySelectorAll("[data-saved-search-merge]:checked")||[]].map(input=>input.value);
+  const ids=[...new Set(checked)].filter(id=>searches.some(item=>item.id===id));
+  if(ids.length<2){showToast("Sélectionnez au moins deux listes.");return;}
+  const mode=root?.querySelector("[data-saved-search-mode]")?.value||"OR";
+  const primary=root?.querySelector("[data-saved-primary]")?.value||ids[0];
+  if(mode==="EXCEPT"&&!ids.includes(primary)){showToast("Choisissez une liste principale parmi les listes sélectionnées.");return;}
+  const sources=mode==="EXCEPT"?[primary,...ids.filter(id=>id!==primary)]:ids;
+  savedListEditorId="";
+  activeAdminSection="saved-contact-searches";
+  renderAdmin();
+  const form=document.querySelector("[data-saved-list-builder]");
+  if(form){
+    form.elements.listType.value="merge";
+    form.elements.mergeMode.value=mode;
+    form.elements.baseId.value=sources[0];
+    form.querySelectorAll('[name="sourceIds"]').forEach(input=>{input.checked=sources.slice(1).includes(input.value);});
+    refreshSavedListBuilder(form);
+    form.scrollIntoView({block:"start",behavior:"smooth"});
+  }
+}
+let savedListEditorId="";
+function savedListBuilderOptions(searches, selectedId="") {
+  return '<option value="">Choisir une liste…</option>'+searches.map(item=>'<option value="'+attr(item.id)+'"'+(item.id===selectedId?' selected':'')+'>'+text(item.name)+'</option>').join("");
+}
+function renderSavedListBuilder(searches) {
+  const edit=searches.find(item=>item.id===savedListEditorId);
+  const type=edit?.listType==="manual"?"manual":edit?.listType==="hybrid"?"hybrid":edit?.sourceIds?.length?"merge":"manual";
+  const primary=edit?.listType==="hybrid"?edit.baseId:edit?.sourceIds?.[0]||"";
+  const otherSources=edit?.sourceIds?.slice(1)||[];
+  const available=searches.filter(item=>item.id!==edit?.id);
+  const selected=(ids,kind)=>ids.map(id=>{
+    const c=contactById(id);
+    return c?'<span class="saved-list-member" data-list-member="'+attr(id)+'" data-list-kind="'+attr(kind)+'"><input type="hidden" name="'+attr(kind)+'Ids" value="'+attr(id)+'" /><span>'+text(contactDisplayName(c))+'</span><button type="button" data-list-remove-member aria-label="Retirer '+attr(contactDisplayName(c))+'">×</button></span>':"";
+  }).join("");
+  return `<section class="saved-list-builder-panel"><header><div><h3>${edit?"Modifier la liste":"Créer une liste spéciale"}</h3><p>Prévisualisez les membres avant d’enregistrer. Les contacts de la base ne sont jamais modifiés.</p></div>${edit?'<button type="button" class="secondary-action compact" data-list-cancel-edit>Annuler</button>':""}</header>
+    <form data-saved-list-builder>
+      <input type="hidden" name="editId" value="${attr(edit?.id||"")}" />
+      <div class="saved-list-builder-grid">
+        <label>Nom de la liste<input name="name" required maxlength="120" value="${attr(edit?.name||"")}" placeholder="Ex. Élus à inviter" /></label>
+        <label>Type de liste<select name="listType">
+          <option value="manual" ${type==="manual"?"selected":""}>Manuelle — membres choisis</option>
+          <option value="hybrid" ${type==="hybrid"?"selected":""}>Hybride — base dynamique + exceptions</option>
+          <option value="merge" ${type==="merge"?"selected":""}>Combinaison — OU / ET / SAUF</option>
+        </select></label>
+      </div>
+      <div class="saved-list-base" data-list-base><label>Liste de départ<select name="baseId">${savedListBuilderOptions(available,primary)}</select></label></div>
+      <div class="saved-list-merge" data-list-merge>
+        <label>Opération<select name="mergeMode"><option value="OR" ${edit?.mergeMode!=="AND"&&edit?.mergeMode!=="EXCEPT"?"selected":""}>OU — réunir les contacts</option><option value="AND" ${edit?.mergeMode==="AND"?"selected":""}>ET — contacts en commun</option><option value="EXCEPT" ${edit?.mergeMode==="EXCEPT"?"selected":""}>SAUF — partir de la liste de départ et exclure les autres</option></select></label>
+        <fieldset><legend>Autres listes</legend><div class="saved-list-source-options">${available.map(item=>'<label><input type="checkbox" name="sourceIds" value="'+attr(item.id)+'"'+(otherSources.includes(item.id)?' checked':'')+' /><span>'+text(item.name)+'</span></label>').join("")||"<small>Aucune autre liste disponible.</small>"}</div></fieldset>
+      </div>
+      <div class="saved-list-manual" data-list-manual>
+        <div class="saved-list-exceptions" data-list-include><strong>Contacts ajoutés manuellement</strong><div class="saved-list-members" data-list-member-container="include">${selected(edit?.includeIds||[],"include")}</div><label>Rechercher un contact<input data-list-contact-query="include" type="search" autocomplete="off" placeholder="Nom, commune, téléphone…" /></label><div class="saved-list-contact-results" data-list-contact-results="include"></div></div>
+        <div class="saved-list-exceptions" data-list-exclude><strong>Exclusions manuelles</strong><div class="saved-list-members" data-list-member-container="exclude">${selected(edit?.excludeIds||[],"exclude")}</div><label>Rechercher une personne à exclure<input data-list-contact-query="exclude" type="search" autocomplete="off" placeholder="Nom, commune…" /></label><div class="saved-list-contact-results" data-list-contact-results="exclude"></div></div>
+      </div>
+      <div class="saved-list-preview" data-list-preview role="status" aria-live="polite">Définissez vos critères pour prévisualiser la liste.</div>
+      <div class="saved-list-builder-actions"><button type="button" class="secondary-action compact" data-list-refresh-preview>Actualiser l'aperçu</button><button class="primary-action compact" type="submit">${edit?"Enregistrer les modifications":"Créer la liste"}</button></div>
+    </form>
+  </section>`;
+}
+function savedListFromBuilder(form) {
+  const d=new FormData(form);
+  const type=String(d.get("listType")||"manual");
+  const editId=String(d.get("editId")||"");
+  const now=new Date().toISOString();
+  const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+  const old=searches.find(item=>item.id===editId);
+  const mode=String(d.get("mergeMode")||"OR");
+  const base=String(d.get("baseId")||"");
+  const others=[...new Set(d.getAll("sourceIds").map(String))].filter(id=>id!==base);
+  const item={
+    id:old?.id||crypto.randomUUID(),name:String(d.get("name")||"").trim().slice(0,120),
+    listType:type==="hybrid"?"hybrid":type==="merge"?"dynamic":"manual",
+    filters:{},baseId:type==="hybrid"?base:"",sourceIds:type==="merge"?[base,...others].filter(Boolean):[],
+    mergeMode:["OR","AND","EXCEPT"].includes(mode)?mode:"OR",
+    includeIds:type==="manual"||type==="hybrid"?[...new Set(d.getAll("includeIds").map(String))]:[],
+    excludeIds:type==="hybrid"?[...new Set(d.getAll("excludeIds").map(String))]:[],
+    createdAt:old?.createdAt||now,updatedAt:now,createdBy:old?.createdBy||currentUserId,favorite:old?.favorite||false
+  };
+  const deps=savedListDependencies(item);
+  if(!item.name)return {error:"Saisissez un nom.",item,searches};
+  if(type==="merge"&&item.sourceIds.length<2)return {error:"Choisissez une liste de départ et au moins une autre liste.",item,searches};
+  if(type==="hybrid"&&!base)return {error:"Choisissez une liste de départ.",item,searches};
+  if(deps.some(id=>!searches.some(entry=>entry.id===id)))return {error:"Une liste source est introuvable.",item,searches};
+  if(savedListWouldCycle(item.id,deps,searches))return {error:"Cette modification créerait une dépendance circulaire.",item,searches};
+  const preview=savedListPreview(item,[...searches.filter(entry=>entry.id!==item.id),item]);
+  return {...preview,item,searches};
+}
+function refreshSavedListBuilder(form) {
+  if(!form)return;
+  const type=form.elements.listType.value;
+  form.querySelector("[data-list-base]").hidden=type==="manual";
+  form.querySelector("[data-list-merge]").hidden=type!=="merge";
+  form.querySelector("[data-list-manual]").hidden=type==="merge";
+  form.querySelector("[data-list-exclude]").hidden=type!=="hybrid";
+  const result=savedListFromBuilder(form);
+  const el=form.querySelector("[data-list-preview]");
+  if(el)el.textContent=result.error?"⚠ "+result.error:result.contacts.length+" contact(s) dans cette liste · "+result.contacts.slice(0,5).map(contactDisplayName).join(" · ")+(result.contacts.length>5?"…":"");
+  return result;
+}
+function updateSavedListContactSuggestions(input) {
+  const form=input.closest("[data-saved-list-builder]");
+  const kind=input.dataset.listContactQuery;
+  const q=normalizeName(input.value);
+  const root=form?.querySelector('[data-list-contact-results="'+kind+'"]');
+  if(!root)return;
+  if(!q){root.innerHTML="";return;}
+  const current=new Set([...form.querySelectorAll('[name="'+kind+'Ids"]')].map(el=>el.value));
+  const matches=adminState.localContacts.filter(c=>c.entityType!=="institution"&&!current.has(c.id)&&contactSearchText(c).includes(q)).slice(0,12);
+  root.innerHTML=matches.map(c=>'<button type="button" data-list-add-member="'+attr(c.id)+'" data-list-kind="'+kind+'">'+text(contactDisplayName(c))+' <small>'+text(c.city||"")+'</small></button>').join("")||"<small>Aucun contact trouvé.</small>";
+}
+function addSavedListMember(form,id,kind) {
+  const contact=contactById(id);
+  if(!contact||contact.entityType==="institution")return;
+  const container=form.querySelector('[data-list-member-container="'+kind+'"]');
+  if(!container||container.querySelector('[data-list-member="'+CSS.escape(id)+'"]'))return;
+  const chip=document.createElement("span");chip.className="saved-list-member";chip.dataset.listMember=id;chip.dataset.listKind=kind;
+  chip.innerHTML='<input type="hidden" name="'+kind+'Ids" value="'+attr(id)+'" /><span>'+text(contactDisplayName(contact))+'</span><button type="button" data-list-remove-member aria-label="Retirer '+attr(contactDisplayName(contact))+'">×</button>';
+  container.append(chip);
+  const input=form.querySelector('[data-list-contact-query="'+kind+'"]');
+  if(input){input.value="";updateSavedListContactSuggestions(input);}
+  refreshSavedListBuilder(form);
+}
+function saveSpecialContactList(form) {
+  const result=savedListFromBuilder(form);
+  if(result.error){showToast(result.error);return;}
+  const existing=result.searches.find(x=>x.id===result.item.id);
+  adminState.savedContactSearches=existing?result.searches.map(item=>item.id===existing.id?result.item:item):[result.item,...result.searches];
+  savedListEditorId="";
+  adminFilters.activeSavedContactSearchId=result.item.id;
+  saveAdminState(existing?"modification":"creation","recherche contact enregistree",result.item.name);
+  showToast("Liste enregistrée : "+result.contacts.length+" contact(s).");
+}
+function addContactToSavedList(contactId,listId) {
+  const searches=normalizeSavedContactSearches(adminState.savedContactSearches),list=searches.find(item=>item.id===listId);
+  const contact=contactById(contactId);
+  if(!list||!contact||!["manual","hybrid"].includes(list.listType))return;
+  if(list.includeIds?.includes(contactId)&&!list.excludeIds?.includes(contactId)){showToast("Ce contact figure déjà dans cette liste.");return;}
+  const ids=new Set(list.includeIds||[]);ids.add(contactId);
+  adminState.savedContactSearches=searches.map(item=>item.id===listId?{...item,includeIds:[...ids],excludeIds:(item.excludeIds||[]).filter(id=>id!==contactId),updatedAt:new Date().toISOString()}:item);
+  saveAdminState("modification","recherche contact enregistree","Ajout de "+contactDisplayName(contact)+" à "+list.name);
+  showToast("Contact ajouté à « "+list.name+" ».");
 }
 
 function renderSavedContactSearches({ standalone = false } = {}) {
@@ -3653,14 +3836,14 @@ function renderSavedContactSearches({ standalone = false } = {}) {
   const current = adminFilters.activeSavedContactSearchId || "";
   return `<section class="saved-contact-searches" aria-label="Recherche sauvegardée">
     <div class="saved-contact-searches-heading">
-      <div><h3>Mes recherches</h3><p>${standalone?"Gérez, combinez et exportez vos listes.":"Retrouvez vos favoris et dernières recherches."}</p></div>
-      ${standalone ? `<button class="primary-action compact" type="button" data-admin-section="contacts">Créer une recherche depuis les contacts</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
+      <div><h3>Mes listes de contacts</h3><p>${standalone?"Recherches dynamiques, listes manuelles et hybrides.":"Retrouvez vos favoris et listes récentes."}</p></div>
+      ${standalone ? `<button class="secondary-action compact" type="button" data-admin-section="contacts">Créer une recherche dynamique</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
+    ${standalone&&searches.length?`<label class="saved-list-filter-label">Retrouver une liste<input type="search" data-saved-list-filter placeholder="Rechercher par nom ou type…" autocomplete="off" /></label>`:""}
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
-      return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
-         <label class="saved-search-check" title="Inclure dans une combinaison"><input type="checkbox" data-saved-search-merge value="${attr(item.id)}" aria-label="Sélectionner ${attr(item.name)}" /></label>
+      return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}" data-list-search-row data-list-search-text="${attr(normalizeName(item.name+" "+savedContactSearchLabel(item)))}">
          <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-           <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
+           <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))}${savedListHasDependents(item.id,allSearches).length?` · utilisée par ${savedListHasDependents(item.id,allSearches).length} liste(s)`:""}</small><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
          </button>
          <button type="button" class="saved-search-favorite" data-contact-favorite-search="${attr(item.id)}" title="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}">${item.favorite?"★":"☆"}</button>
          <details class="saved-search-more"><summary aria-label="Actions sur ${attr(item.name)}" title="Plus d’actions">⋯</summary>
@@ -3668,12 +3851,15 @@ function renderSavedContactSearches({ standalone = false } = {}) {
              <button type="button" data-contact-export-search="${attr(item.id)}">Exporter par adresse</button>
              <button type="button" data-contact-export-people="${attr(item.id)}">Exporter par personne</button>
              <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
-             ${!item.sourceIds?.length&&!item.isSnapshot?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
+             <button type="button" data-list-rename="${attr(item.id)}">Renommer</button>
+             <button type="button" data-list-duplicate="${attr(item.id)}">Dupliquer</button>
+             ${item.isSnapshot||item.listType==="dynamic"&&!item.sourceIds?.length?'':`<button type="button" data-list-edit="${attr(item.id)}">Modifier la liste</button>`}
+             ${!item.sourceIds?.length&&!item.isSnapshot&&item.listType==="dynamic"?`<button type="button" data-contact-update-search="${attr(item.id)}">Actualiser les critères</button>`:""}
              <button type="button" class="danger" data-contact-delete-search="${attr(item.id)}">Supprimer la recherche</button>
            </div>
          </details>
        </div>`;
-    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} recherches</button>`:""}<div class="saved-search-combine"><label>Combiner les recherches cochées <select data-saved-search-mode> <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Créer la combinaison</button></div>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+    }).join("")}</div>${!standalone && allSearches.length>8?`<button type="button" class="secondary-action compact" data-admin-section="saved-contact-searches">Voir les ${allSearches.length} listes</button>`:""}` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3683,6 +3869,7 @@ function hydrateSavedContactStats(root) {
   if (!root) return;
   const elements = [...root.querySelectorAll("[data-saved-contact-stats]")];
   if (!elements.length) return;
+  const memo=new Map();
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const lookup = new Map(searches.map((item) => [item.id, item]));
   let index = 0;
@@ -3694,17 +3881,17 @@ function hydrateSavedContactStats(root) {
       const item = lookup.get(node.dataset.savedContactStats);
       if (!item) continue;
       try {
-        const contacts = savedSearchContacts(item, searches);
+        const contacts = evaluateSavedList(item, searches, memo);
         const summary = savedSearchExportPreview(contacts);
         const sources = item.sourceIds?.map((id) => lookup.get(id)).filter(Boolean) || [];
-        const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
+        const overlapCount = Math.max(0, sources.reduce((count, source) => count + evaluateSavedList(source, searches, memo).length, 0) - contacts.length);
         node.textContent = savedContactSearchLabel(item) + " · " + contacts.length +
           " contacts · " + summary.rows.length + " adresses · " + (summary.totalAvoided + overlapCount) +
           " doublon(s) évité(s) (" + overlapCount + " entre recherches, " +
           summary.personDuplicates + " personnes, " + summary.addressDuplicates + " adresses)";
       } catch (error) {
         console.error("Statistiques de recherche sauvegardée :", error);
-        node.textContent = "Statistiques indisponibles (la recherche reste utilisable).";
+        node.textContent = "⚠ "+(error.message||"Liste invalide")+" — vérifiez ses sources.";
       }
       break;
     }
@@ -3714,7 +3901,12 @@ function hydrateSavedContactStats(root) {
 }
 
 function renderSavedContactSearchesPage() {
-  return `<div class="contacts-admin contact-search-page"><header class="contact-search-head"><div><h2>Recherche sauvegardée</h2><p>Fusionnez vos listes et exportez les adresses sans doublons.</p></div></header>${renderSavedContactSearches({ standalone: true })}</div>`;
+  const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+  return `<div class="contacts-admin contact-search-page saved-list-workspace">
+    <header class="contact-search-head"><div><h2>Mes listes de contacts</h2><p>Créez des listes manuelles, hybrides ou des combinaisons de recherches existantes.</p></div></header>
+    ${renderSavedListBuilder(searches)}
+    ${renderSavedContactSearches({standalone:true})}
+  </div>`;
 }
 
 function saveContactSearch(form, existingId = "") {
@@ -3733,7 +3925,8 @@ function saveContactSearch(form, existingId = "") {
     filters: savedContactSearchFilters(form),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    createdBy: existing?.createdBy || currentUserId
+    createdBy: existing?.createdBy || currentUserId,
+    favorite: existing?.favorite || false
   };
   adminState.savedContactSearches = existing ? current.map((entry) => entry.id === existing.id ? item : entry) : [item, ...current];
   adminFilters.activeSavedContactSearchId = item.id;
@@ -3747,7 +3940,7 @@ function loadContactSearch(id) {
   if (!item) return;
   // Une recherche enregistrée reste dynamique : la sélection précédente ne doit pas contaminer la nouvelle liste.
   clearContactSelection();
-  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
+  adminFilters.contacts = (item.sourceIds?.length||item.isSnapshot||["manual","hybrid"].includes(item.listType)) ? { perPage: 100, page: 1 } : { ...item.filters, page: 1 };
   adminFilters.activeSavedContactSearchId = item.id;
   activeAdminSection = "contacts";
   renderAdmin();
@@ -3756,8 +3949,8 @@ function loadContactSearch(id) {
 function deleteContactSearch(id) {
   const item = normalizeSavedContactSearches(adminState.savedContactSearches).find((entry) => entry.id === id);
   if (!item || !confirm(`Supprimer la recherche « ${item.name} » ? Les contacts ne seront pas supprimés.`)) return;
-  // Keep dependent merged lists intact by retaining their source criteria as a snapshot.
-  const dependents = normalizeSavedContactSearches(adminState.savedContactSearches).filter((entry) => entry.sourceIds?.includes(id));
+  // Prevent deletion of a source used by any composite or hybrid list.
+  const dependents = savedListHasDependents(id,normalizeSavedContactSearches(adminState.savedContactSearches));
   if (dependents.length) { showToast("Cette recherche est utilisée par une fusion : supprimez d’abord la fusion."); return; }
   adminState.savedContactSearches = adminState.savedContactSearches.filter((entry) => entry.id !== id);
   if (adminFilters.activeSavedContactSearchId === id) adminFilters.activeSavedContactSearchId = "";
@@ -3765,7 +3958,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
+  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -3807,7 +4000,7 @@ function filteredContacts(filters = contactSearchFilters()) {
   if (arguments.length === 0 && adminFilters.activeSavedContactSearchId) {
     const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
-    if (active?.sourceIds?.length||active?.isSnapshot) return savedSearchContacts(active, searches);
+    if (active?.sourceIds?.length||active?.isSnapshot||["manual","hybrid"].includes(active?.listType)) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
   const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
@@ -4645,12 +4838,15 @@ function renderContacts() {
   const pageCount = Math.max(1, Math.ceil(contacts.length / filters.perPage));
   const page = Math.min(filters.page, pageCount);
   const pageContacts = contacts.slice((page - 1) * filters.perPage, page * filters.perPage);
-  const selected = contactById(selectedContactId) || contacts[0];
+  const selected = contacts.find(contact=>contact.id===selectedContactId) || contacts[0];
   if (selected) selectedContactId = selected.id;
   const selectedCount = allFilteredSelected ? contacts.length : selectedContactIds.size;
   const selectedInResults = allFilteredSelected ? contacts.length : contacts.filter((contact) => selectedContactIds.has(contact.id)).length;
+  const activeList = normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);
+  const activeListError = activeList?savedListPreview(activeList,normalizeSavedContactSearches(adminState.savedContactSearches)).error:"";
   return `<div class="contacts-admin contact-search-page">
     ${contactDeletionProgress ? renderContactDeletionProgress() : ""}
+    ${activeListError?`<section class="saved-list-error" role="alert">⚠ Liste indisponible : ${text(activeListError)}. Vérifiez les listes sources dans « Listes de contacts ».</section>`:""}
     <section class="contact-search-panel">
       <header class="contact-search-head">
         <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.filter((item) => item.entityType !== "institution").length} personne(s)</p></div>
@@ -4683,6 +4879,7 @@ function renderContacts() {
           <button class="secondary-action compact" type="button" data-contact-select-page>Sélectionner cette page</button>
           <button class="secondary-action compact" type="button" data-contact-select-filtered>Sélectionner les ${contacts.length} résultats</button>
           <button class="secondary-action compact" type="button" data-contact-clear-selection>Vider</button>
+          <button class="secondary-action compact" type="button" data-contact-list-from-selection ${selectedCount?"":"disabled"}>Créer une liste avec la sélection</button>
           ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la sélection</button>` : ""}
           <small>${selectedInResults} selectionne(s) dans les resultats filtres</small>
         </div>
@@ -4800,11 +4997,13 @@ function renderContactImportLoading() {
 }
 
 function renderContactForm(contact) {
+  const editableLists=normalizeSavedContactSearches(adminState.savedContactSearches).filter(item=>["manual","hybrid"].includes(item.listType));
+  const listAccess=editableLists.length?`<div class="contact-add-to-list"><label>Ajouter à une liste<select data-contact-add-list><option value="">Choisir une liste…</option>${editableLists.map(item=>`<option value="${attr(item.id)}">${text(item.name)}</option>`).join("")}</select></label><button type="button" class="secondary-action compact" data-contact-add-to-list="${attr(contact.id)}">Ajouter</button></div>`:"";
   const localCases = adminState.permanenceRequests.filter((item) => item.contactId === contact.id);
   const links = localCases.map((item) => `<button type="button" data-open-contact-local-case="${attr(item.id)}">Dossier local · ${text(item.title)}</button>`).join("");
   const calendarLinks = (adminState.calendarEvents || []).filter((item) => item.contactIds?.includes(contact.id)).sort((a, b) => String(a.startAt).localeCompare(String(b.startAt))).map((item) => `<button type="button" data-open-contact-calendar-event="${attr(item.id)}">📅 ${text(formatDate(item.startAt))} · ${text(calendarTimeLabel(item.startAt))} — ${text(item.title)}</button>`).join("");
   const campaignLinks = (adminState.campaignEvents || []).filter((item) => item.participants?.some((participant) => participant.contactId === contact.id)).map((item) => `<button type="button" data-open-contact-campaign-event="${attr(item.id)}">🎟 ${text(formatDate(item.startAt))} — ${text(item.title)}</button>`).join("");
-  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}${contact.institutionId ? `<div class="contact-institution-link"><strong>Institution associée :</strong> <button type="button" data-admin-section="institutions">Voir les institutions</button></div>` : ""}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
+  return `<form class="admin-form contact-detail-form" data-contact-update="${attr(contact.id)}"><div class="admin-detail-head"><div><h3>${text(contactDisplayName(contact))}</h3><p>${text(contact.id)}</p></div>${isContactDeceased(contact) ? `<span class="status-chip death-chip">Deces</span>` : ""}</div>${links ? `<section class="contact-linked-folders"><strong>Dossiers et taches lies</strong>${links}</section>` : ""}${calendarLinks ? `<section class="contact-linked-folders contact-linked-calendar"><strong>Événements de l’agenda liés</strong>${calendarLinks}</section>` : ""}${campaignLinks ? `<section class="contact-linked-folders"><strong>Événements de campagne (participant)</strong>${campaignLinks}</section>` : ""}${contact.institutionId ? `<div class="contact-institution-link"><strong>Institution associée :</strong> <button type="button" data-admin-section="institutions">Voir les institutions</button></div>` : ""}${listAccess}<div class="contact-form-grid">${contactFields().filter((field) => field.id !== "id").map((field) => renderContactInput(field, contact)).join("")}</div><div class="form-actions"><button class="primary-action" type="submit">Enregistrer</button><button class="secondary-action" type="button" data-contact-mark-death="${attr(contact.id)}">Marquer deces</button>${isAdmin() ? `<button class="secondary-action danger" type="button" data-delete-contact="${attr(contact.id)}">Supprimer le contact</button>` : ""}</div></form>`;
 }
 
 function renderContactImportMapping() {
@@ -6681,6 +6880,11 @@ function updateContactReferences(previousId, nextId) {
   adminState.teamTasks.forEach((item) => { if (item.linkedContactId === previousId) item.linkedContactId = nextId; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).map((id) => id === previousId ? nextId : id); for (const rows of Object.values(item.attendanceByDate || {})) rows.forEach((row) => { if (row.contactId === previousId) row.contactId = nextId; }); });
   (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).map((row) => ({...row, contactId: row.contactId === previousId ? nextId : row.contactId})); });
+  (adminState.savedContactSearches||[]).forEach(item=>{
+    ["includeIds","excludeIds","snapshotIds"].forEach(key=>{
+      if(Array.isArray(item[key]))item[key]=[...new Set(item[key].map(id=>id===previousId?nextId:id))];
+    });
+  });
   adminState.deathCases.forEach((item) => {
     if (item.deceasedId === previousId) item.deceasedId = nextId;
     (item.relatives || []).forEach((relative) => { if (relative.contactId === previousId) relative.contactId = nextId; });
@@ -6698,6 +6902,11 @@ function clearDeletedContactReferences(ids) {
   adminState.teamTasks.forEach((item) => { if (deleted.has(item.linkedContactId)) item.linkedContactId = ""; });
   adminState.calendarEvents.forEach((item) => { item.contactIds = (item.contactIds || []).filter((id) => !deleted.has(id)); for (const [day, rows] of Object.entries(item.attendanceByDate || {})) item.attendanceByDate[day] = rows.filter((row) => !deleted.has(row.contactId)); });
   (adminState.campaignEvents || []).forEach((item) => { item.participants = (item.participants || []).filter((row) => !deleted.has(row.contactId)); });
+  (adminState.savedContactSearches||[]).forEach(item=>{
+    ["includeIds","excludeIds","snapshotIds"].forEach(key=>{
+      if(Array.isArray(item[key]))item[key]=item[key].filter(id=>!deleted.has(id));
+    });
+  });
   adminState.deathCases.forEach((item) => {
     if (deleted.has(item.deceasedId)) item.deceasedId = "";
     item.relatives = (item.relatives || []).filter((relative) => !deleted.has(relative.contactId));
@@ -6766,7 +6975,7 @@ async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal,
 async function deleteSelectedContactsFast(selectedCount = null) {
   const filters = contactSearchFilters();
   if (isAllFilteredContactSelectionActive(filters)) {
-    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot)){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
+    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot||["manual","hybrid"].includes(current.listType))){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
     await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
@@ -8599,6 +8808,17 @@ document.addEventListener("keydown",event=>{
     else picker.querySelector("[data-contact-keyword-create]")?.click();
   }
 });
+document.addEventListener("input",event=>{
+  if(event.target.matches("[data-list-contact-query]"))updateSavedListContactSuggestions(event.target);
+  if(event.target.matches("[data-saved-list-filter]")){
+    const query=normalizeName(event.target.value);
+    const panel=event.target.closest(".saved-contact-searches");
+    panel?.querySelectorAll("[data-list-search-row]").forEach(row=>{row.hidden=!!query&&!row.dataset.listSearchText.includes(query);});
+  }
+});
+document.addEventListener("change",event=>{
+  if(event.target.matches('[data-saved-list-builder] select, [data-saved-list-builder] input[name="sourceIds"]'))refreshSavedListBuilder(event.target.closest("[data-saved-list-builder]"));
+});
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
@@ -9359,6 +9579,62 @@ document.addEventListener("click", async (event) => {
     showToast("Mot-clé « "+label+" » ajouté au catalogue et à la recherche.");
     return;
   }
+  const formBuilder=event.target.closest("[data-saved-list-builder]");
+  if(formBuilder){
+    const add=event.target.closest("[data-list-add-member]");
+    if(add){addSavedListMember(formBuilder,add.dataset.listAddMember,add.dataset.listKind);return;}
+    const remove=event.target.closest("[data-list-remove-member]");
+    if(remove){remove.closest("[data-list-member]")?.remove();refreshSavedListBuilder(formBuilder);return;}
+    if(event.target.closest("[data-list-refresh-preview]")){refreshSavedListBuilder(formBuilder);return;}
+  }
+  if(event.target.closest("[data-contact-list-from-selection]")){
+    const filters=contactSearchFilters();
+    const contacts=isAllFilteredContactSelectionActive(filters)?filteredContacts():adminState.localContacts.filter(c=>selectedContactIds.has(c.id)&&c.entityType!=="institution");
+    if(!contacts.length){showToast("Sélectionnez des contacts.");return;}
+    const name=prompt("Nom de la liste manuelle");
+    if(name===null)return;
+    const clean=String(name).trim().slice(0,120);
+    if(!clean){showToast("Saisissez un nom valide.");return;}
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches),now=new Date().toISOString();
+    const item={id:crypto.randomUUID(),name:clean,listType:"manual",includeIds:contacts.map(c=>c.id),excludeIds:[],filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId};
+    adminState.savedContactSearches=[item,...searches];
+    clearContactSelection();
+    adminFilters.activeSavedContactSearchId=item.id;
+    saveAdminState("creation","recherche contact enregistree",clean);
+    showToast("Liste manuelle créée : "+contacts.length+" contact(s).");
+    return;
+  }
+  const contactListAdd=event.target.closest("[data-contact-add-to-list]");
+  if(contactListAdd){
+    const listId=contactListAdd.closest(".contact-add-to-list")?.querySelector("[data-contact-add-list]")?.value;
+    if(!listId){showToast("Choisissez une liste.");return;}
+    addContactToSavedList(contactListAdd.dataset.contactAddToList,listId);return;
+  }
+  const editList=event.target.closest("[data-list-edit]");
+  if(editList){savedListEditorId=editList.dataset.listEdit;activeAdminSection="saved-contact-searches";renderAdmin();document.querySelector("[data-saved-list-builder]")?.scrollIntoView({block:"start",behavior:"smooth"});return;}
+  if(event.target.closest("[data-list-cancel-edit]")){savedListEditorId="";renderAdmin();return;}
+  const renameList=event.target.closest("[data-list-rename]");
+  if(renameList){
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+    const item=searches.find(x=>x.id===renameList.dataset.listRename);
+    if(!item)return;
+    const name=prompt("Nouveau nom de la liste",item.name);
+    if(name===null)return;
+    const clean=String(name).trim().slice(0,120);
+    if(!clean){showToast("Saisissez un nom valide.");return;}
+    adminState.savedContactSearches=searches.map(x=>x.id===item.id?{...x,name:clean,updatedAt:new Date().toISOString()}:x);
+    saveAdminState("modification","recherche contact enregistree",clean);return;
+  }
+  const duplicateList=event.target.closest("[data-list-duplicate]");
+  if(duplicateList){
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches);
+    const item=searches.find(x=>x.id===duplicateList.dataset.listDuplicate);
+    if(!item)return;
+    const now=new Date().toISOString();
+    const copy={...item,id:crypto.randomUUID(),name:(item.name+" — copie").slice(0,120),createdAt:now,updatedAt:now,createdBy:currentUserId,favorite:false};
+    adminState.savedContactSearches=[copy,...searches];
+    saveAdminState("creation","recherche contact enregistree",copy.name);return;
+  }
   const contactSaveSearch = event.target.closest("[data-contact-save-search]");
   if (contactSaveSearch) {
     const form = document.querySelector('[data-admin-filter="contacts"]');
@@ -9680,6 +9956,7 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  if(form.matches("[data-saved-list-builder]")){event.preventDefault();saveSpecialContactList(form);return;}
   const filter = form.closest("[data-admin-filter]");
   if (filter) {
     event.preventDefault();
