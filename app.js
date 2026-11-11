@@ -3096,7 +3096,7 @@ function renderMailCampaigns() {
     <form class="admin-form mail-campaign-form" data-mail-campaign-form>
       <label>Liste de contacts (recherche enregistrée)
         <select name="searchId" required><option value="">Choisir une liste…</option>
-        ${searches.filter((item) => !item.sourceIds?.length).map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
+        ${searches.map((item) => `<option value="${attr(item.id)}" ${mailCampaignUI.searchId === item.id ? "selected" : ""}>${text(item.name)}</option>`).join("")}</select>
       </label>
       <label>Modèle de mail
         <select name="templateId" required><option value="">Choisir un modèle…</option>
@@ -3364,6 +3364,49 @@ function renderContactKeywordFilters(filters) {
   </fieldset>`;
 }
 
+function contactRuleMatch(contact,field,raw,op) {
+  const values=Array.isArray(contact[field.id])?contact[field.id]:[contact[field.id]];
+  const strings=values.map(v=>normalizeName(v??""));
+  const has=values.some(v=>v!==null&&v!==undefined&&String(v).trim()!=="");
+  if(op==="empty")return !has;
+  if(op==="not_empty")return has;
+  const expected=normalizeName(raw??"");
+  if(!expected)return true;
+  if(op==="before"||op==="after"){
+    const left=Date.parse(String(contact[field.id]||"").slice(0,10)),right=Date.parse(String(raw).slice(0,10));
+    return Number.isFinite(left)&&Number.isFinite(right)&&(op==="before"?left<right:left>right);
+  }
+  if(op==="not_contains")return !strings.some(v=>v.includes(expected));
+  if(op==="equals")return strings.some(v=>v===expected);
+  if(op==="not_equals")return !strings.some(v=>v===expected);
+  if(op==="starts_with")return strings.some(v=>v.startsWith(expected));
+  return contactMatchesDynamicFilter(contact,field,raw);
+}
+
+function contactLinkedActivity(contact,kind) {
+  const id=contact.id;
+  if(kind==="campaign"||kind==="attendance"||kind==="absence")return (adminState.campaignEvents||[]).some(ev=>(ev.participants||[]).some(p=>p.contactId===id&&(kind==="campaign"||(kind==="attendance"?p.status==="attended":p.status==="absent"))));
+  if(kind==="calendar")return (adminState.calendarEvents||[]).some(ev=>(ev.contactIds||[]).includes(id));
+  if(kind==="task")return (adminState.teamTasks||[]).some(t=>t.linkedContactId===id);
+  if(kind==="permanence")return (adminState.permanenceRequests||[]).some(p=>p.contactId===id);
+  return true;
+}
+
+function renderContactOperator(field,filters) {
+  const op=filters.ops?.[field.id]||"contains",choices=[["contains","Contient"],["not_contains","Ne contient pas"],["equals","Est égal à"],["not_equals","Est différent de"],["starts_with","Commence par"],["empty","Est vide"],["not_empty","Est renseigné"]];
+  if(field.type==="date")choices.push(["before","Avant"],["after","Après"]);
+  return '<select name="op_'+attr(field.id)+'" aria-label="Opérateur '+attr(field.label)+'">'+choices.map(([v,label])=>'<option value="'+attr(v)+'"'+(op===v?' selected':'')+'>'+text(label)+'</option>').join("")+'</select>';
+}
+
+function renderContactAdvancedFilters(filters) {
+  const select=(name,key,choices,value)=>'<label>'+text(name)+'<select name="'+attr(key)+'">'+choices.map(([v,label])=>'<option value="'+attr(v)+'"'+(v===value?' selected':'')+'>'+text(label)+'</option>').join("")+'</select></label>';
+  return '<fieldset class="contact-advanced-filters"><legend>Conditions avancées</legend><div class="contact-filter-grid">'+
+  select("Combiner les champs","fieldJoinMode",[["AND","Tous (ET)"],["OR","Au moins un (OU)"]],filters.fieldJoinMode||"AND")+
+  select("Activité liée","activityKind",[["","Toutes"],["campaign","Inscrit à un événement"],["attendance","Présent à un événement"],["absence","Absent à un événement"],["calendar","Lié au calendrier"],["task","Lié à une tâche"],["permanence","Lié à une permanence"]],filters.activityKind||"")+
+  select("Trier","sortBy",[["","Par défaut"],["lastName","Nom"],["firstName","Prénom"],["city","Commune"],["createdAt","Date de création"],["updatedAt","Date de modification"]],filters.sortBy||"")+
+  select("Ordre","sortOrder",[["asc","Croissant"],["desc","Décroissant"]],filters.sortOrder||"asc")+'</div></fieldset>';
+}
+
 function contactSearchFilters() {
   const filters = adminFilters.contacts || {};
   const perPage = [10, 25, 100, 1000].includes(Number(filters.perPage)) ? Number(filters.perPage) : 100;
@@ -3371,9 +3414,9 @@ function contactSearchFilters() {
   const fields = {};
   contactFields().filter((field) => field.id !== "id").forEach((field) => {
     const value = String(filters[contactFilterKey(field)] || "").trim();
-    if (value) fields[field.id] = value;
+    if (value || ["empty","not_empty"].includes(filters["op_"+field.id])) fields[field.id] = value;
   });
-  return { q: String(filters.q || ""), page, perPage, fields, keywordIds: normalizedContactKeywordIds(filters.keywordIds), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" };
+  return {q:String(filters.q||""),page,perPage,fields,ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
 }
 
 
@@ -3387,11 +3430,12 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (key === "q" || key === "perPage" || (key.startsWith("field_") && key.length < 100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR" },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
-    sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : []
+    sourceIds: Array.isArray(item.sourceIds) ? [...new Set(item.sourceIds.filter((id) => typeof id === "string" && id !== item.id))].slice(0, 100) : [],
+    mergeMode: ["OR","AND","EXCEPT"].includes(item.mergeMode) ? item.mergeMode : "OR"
   })).slice(0, 200);
 }
 
@@ -3400,7 +3444,7 @@ function savedContactSearchFilters(form) {
   const allowed = new Set(contactFields().map((field) => contactFilterKey(field)));
   const filters = {};
   for (const [key, value] of Object.entries(values)) {
-    if (allowed.has(key) && String(value).trim()) filters[key] = String(value).trim();
+    if ((allowed.has(key)&&(String(value).trim()||["empty","not_empty"].includes(values["op_"+key.slice(6)])))||(key.startsWith("op_")&&allowed.has("field_"+key.slice(3)))||["fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key)) filters[key]=String(value).trim();
   }
   if (String(values.q || "").trim()) filters.q = String(values.q).trim();
   filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
@@ -3410,7 +3454,7 @@ function savedContactSearchFilters(form) {
 }
 
 function savedContactSearchLabel(item) {
-  if (item.sourceIds?.length) return "Fusion de " + item.sourceIds.length + " recherches";
+  if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
   const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
@@ -3422,17 +3466,16 @@ function savedSearchContacts(item, searches = normalizeSavedContactSearches(admi
   next.add(item.id);
   if (item.sourceIds?.length) {
     const byId = new Map(searches.map((entry) => [entry.id, entry]));
-    const found = new Map();
-    for (const id of item.sourceIds) {
-      for (const contact of savedSearchContacts(byId.get(id), searches, next)) found.set(contact.id, contact);
-    }
-    return [...found.values()];
+    const lists=item.sourceIds.map(id=>savedSearchContacts(byId.get(id),searches,next));
+    if(item.mergeMode==="AND"){const sets=lists.slice(1).map(list=>new Set(list.map(c=>c.id)));return (lists[0]||[]).filter(c=>sets.every(set=>set.has(c.id)));}
+    if(item.mergeMode==="EXCEPT"){const rejected=new Set(lists.slice(1).flat().map(c=>c.id));return (lists[0]||[]).filter(c=>!rejected.has(c.id));}
+    return [...new Map(lists.flat().map(c=>[c.id,c])).values()];
   }
   const filters = item.filters || {};
   return filteredContacts({
     q: filters.q || "",
     fields: Object.fromEntries(Object.entries(filters).filter(([key]) => key.startsWith("field_")).map(([key, value]) => [key.slice(6), value])),
-    keywordIds: filters.keywordIds, keywordMode: filters.keywordMode
+    keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
   });
 }
 
@@ -3513,7 +3556,8 @@ function mergeSavedContactSearches() {
   const cleanName = name.trim().slice(0, 120);
   if (!cleanName) { showToast("Saisissez un nom."); return; }
   const now = new Date().toISOString();
-  const item = { id: crypto.randomUUID(), name: cleanName, sourceIds: ids, filters: {},
+  const mergeMode=document.querySelector("[data-saved-search-mode]")?.value||"OR";
+  const item = { id: crypto.randomUUID(), name: cleanName, sourceIds: ids, mergeMode, filters: {},
     createdAt: now, updatedAt: now, createdBy: currentUserId };
   adminState.savedContactSearches = [item, ...searches];
   adminFilters.activeSavedContactSearchId = item.id;
@@ -3541,7 +3585,7 @@ function renderSavedContactSearches({ standalone = false } = {}) {
         ${!item.sourceIds?.length ? `<button type="button" class="secondary-action compact" data-contact-update-search="${attr(item.id)}" title="Remplacer les critères enregistrés">Actualiser</button>` : ""}
         <button type="button" class="secondary-action compact danger" data-contact-delete-search="${attr(item.id)}">Supprimer</button>
       </div>`;
-    }).join("")}</div><button class="primary-action compact" type="button" data-contact-merge-searches>Fusionner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
+    }).join("")}</div><label>Opération <select data-saved-search-mode><option value="OR">Réunion (OU)</option><option value="AND">Intersection (ET)</option><option value="EXCEPT">Première liste SAUF les autres</option></select></label><button class="primary-action compact" type="button" data-contact-merge-searches>Combiner les recherches cochées</button>` : '<p class="saved-contact-search-empty">Aucune recherche enregistrée.</p>'}
   </section>`;
 }
 
@@ -3662,13 +3706,12 @@ function contactMatchesDynamicFilter(contact = {}, field, rawValue = "") {
 }
 
 function contactMatchesFilters(contact, filters, fieldsById) {
-  const normalizedQuery = filters.q ? normalizeName(filters.q) : "";
-  if (normalizedQuery && !contactSearchText(contact).includes(normalizedQuery)) return false;
-  if (!contactMatchesKeywords(contact, filters.keywordIds, filters.keywordMode)) return false;
-  return Object.entries(filters.fields || {}).every(([fieldId, value]) => {
-    const field = fieldsById.get(fieldId);
-    return !field || contactMatchesDynamicFilter(contact, field, value);
-  });
+  const query=filters.q?normalizeName(filters.q):"";
+  if(query&&!contactSearchText(contact).includes(query))return false;
+  if(!contactMatchesKeywords(contact,filters.keywordIds,filters.keywordMode))return false;
+  if(filters.activityKind&&!contactLinkedActivity(contact,filters.activityKind))return false;
+  const tests=Object.entries(filters.fields||{}).map(([id,val])=>{const field=fieldsById.get(id);return !field||contactRuleMatch(contact,field,val,filters.ops?.[id]||"contains");});
+  return filters.fieldJoinMode==="OR"?(!tests.length||tests.some(Boolean)):tests.every(Boolean);
 }
 
 function filteredContacts(filters = contactSearchFilters()) {
@@ -3678,7 +3721,9 @@ function filteredContacts(filters = contactSearchFilters()) {
     if (active?.sourceIds?.length) return savedSearchContacts(active, searches);
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  return adminState.localContacts.filter((contact) => contact.entityType !== "institution" && contactMatchesFilters(contact, filters, fieldsById));
+  const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
+  if(filters.sortBy){const key=filters.sortBy,d=filters.sortOrder==="desc"?-1:1;results.sort((a,b)=>d*String(a[key]||"").localeCompare(String(b[key]||""),"fr",{sensitivity:"base",numeric:true}));}
+  return results;
 }
 
 function isAllFilteredContactSelectionActive(filters = contactSearchFilters()) {
@@ -3712,7 +3757,8 @@ function renderContactDynamicFilters(filters) {
   return `<details class="contact-filter-section contact-dynamic-search" ${activeCount ? "open" : ""}>
     <summary><span>Plus de critères</span><small>${activeCount ? `${activeCount} actif${activeCount > 1 ? "s" : ""}` : "Téléphone, email, catégorie, organisation…"}</small></summary>
     ${renderContactKeywordFilters(filters)}
-    <div class="contact-filter-grid">${fields.map((field) => renderContactDynamicFilter(field, filters.fields[field.id] || "")).join("")}</div>
+    ${renderContactAdvancedFilters(filters)}
+    <div class="contact-filter-grid">${fields.map(field=>`<div class="contact-rule-field">${renderContactOperator(field,filters)}${renderContactDynamicFilter(field,filters.fields[field.id]||"")}</div>`).join("")}</div>
     <div class="contact-filter-actions">
       <button class="primary-action compact" type="submit">Appliquer les filtres</button>
       <button class="secondary-action compact" type="button" data-contact-reset-filters>Réinitialiser</button>
@@ -4590,9 +4636,9 @@ function renderContactImportExport() {
       <section class="contact-io-card">
         <h3>Exporter des contacts</h3>
         <p>Choisissez les contacts a exporter et le format souhaite.</p>
-        <div class="contact-io-choice"><label><input type="radio" checked /> Tous les contacts</label><small>Exporter l'ensemble de vos contacts.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" disabled /> Contacts filtres</label><small>Export selon les filtres appliques.</small></div>
-        <div class="contact-io-choice"><label><input type="radio" disabled /> Contacts selectionnes</label><small>Export uniquement les contacts selectionnes.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="all" checked /> Tous les contacts</label><small>Exporter l'ensemble de vos contacts.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="filtered" /> Contacts filtres</label><small>Export selon les filtres appliques.</small></div>
+        <div class="contact-io-choice"><label><input type="radio" name="contactExportScope" value="selected" /> Contacts selectionnes</label><small>Export uniquement les contacts selectionnes.</small></div>
         <label>Format d'export<select><option>CSV (separateur point-virgule)</option><option>JSON</option></select></label>
         <div class="contact-admin-actions"><button class="primary-action" type="button" data-contact-export="csv">Exporter les contacts</button><button class="secondary-action" type="button" data-contact-export="json">Exporter JSON</button></div>
       </section>
@@ -6613,11 +6659,16 @@ function csvEscape(value = "") {
 }
 
 function exportContacts(format = "csv") {
+  const scope=document.querySelector("input[name=contactExportScope]:checked")?.value||"all";
+  const base=adminState.localContacts.filter(c=>c.entityType!=="institution");
+  const subset=scope==="filtered"?filteredContacts():scope==="selected"?(isAllFilteredContactSelectionActive(contactSearchFilters())?filteredContacts():base.filter(c=>selectedContactIds.has(c.id))):base;
+  if(!subset.length){showToast("Aucun contact à exporter.");return;}
   if (format === "json") {
-    downloadFile("contacts-locaux.json", JSON.stringify(adminState.localContacts, null, 2), "application/json;charset=utf-8");
+    downloadFile("contacts-locaux.json", JSON.stringify(subset, null, 2), "application/json;charset=utf-8");
     return;
   }
-  const { headers, rows } = contactExportRows();
+  const headers=contactFields().map(field=>field.id);
+  const rows=subset.map(c=>headers.map(id=>Array.isArray(c[id])?c[id].join(", "):c[id]??""));
   const csv = [headers.join(";"), ...rows.map((row) => row.map(csvEscape).join(";"))].join("\n");
   downloadFile("contacts-locaux.csv", csv, "text/csv;charset=utf-8");
 }
