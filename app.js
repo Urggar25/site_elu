@@ -3650,7 +3650,7 @@ function exportSavedContactSearch(id) {
         })
       : savedSearchContacts(entry, searches);
   };
-  const overlaps = Math.max(0, sourceOccurrences(item).length - contacts.length);
+  const overlaps = item.sourceIds?.length && item.mergeMode === "OR" ? Math.max(0, sourceOccurrences(item).length - contacts.length) : 0;
   const rows = [["Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"], ...result.rows];
   downloadFile("recherche-" + slugify(item.name) + ".xlsx", participantWorkbookBytes(rows),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -3823,6 +3823,7 @@ function addContactToSavedList(contactId,listId) {
   const searches=normalizeSavedContactSearches(adminState.savedContactSearches),list=searches.find(item=>item.id===listId);
   const contact=contactById(contactId);
   if(!list||!contact||!["manual","hybrid"].includes(list.listType))return;
+  if(list.includeIds?.includes(contactId)&&!list.excludeIds?.includes(contactId)){showToast("Ce contact figure déjà dans cette liste.");return;}
   const ids=new Set(list.includeIds||[]);ids.add(contactId);
   adminState.savedContactSearches=searches.map(item=>item.id===listId?{...item,includeIds:[...ids],excludeIds:(item.excludeIds||[]).filter(id=>id!==contactId),updatedAt:new Date().toISOString()}:item);
   saveAdminState("modification","recherche contact enregistree","Ajout de "+contactDisplayName(contact)+" à "+list.name);
@@ -3838,8 +3839,9 @@ function renderSavedContactSearches({ standalone = false } = {}) {
       <div><h3>Mes listes de contacts</h3><p>${standalone?"Recherches dynamiques, listes manuelles et hybrides.":"Retrouvez vos favoris et listes récentes."}</p></div>
       ${standalone ? `<button class="secondary-action compact" type="button" data-admin-section="contacts">Créer une recherche dynamique</button>` : `<button class="primary-action compact" type="button" data-contact-save-search>Enregistrer cette recherche</button>`}
     </div>
+    ${standalone&&searches.length?`<label class="saved-list-filter-label">Retrouver une liste<input type="search" data-saved-list-filter placeholder="Rechercher par nom ou type…" autocomplete="off" /></label>`:""}
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
-      return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
+      return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}" data-list-search-row data-list-search-text="${attr(normalizeName(item.name+" "+savedContactSearchLabel(item)))}">
          <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
            <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))}${savedListHasDependents(item.id,allSearches).length?` · utilisée par ${savedListHasDependents(item.id,allSearches).length} liste(s)`:""}</small><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
          </button>
@@ -8805,6 +8807,11 @@ document.addEventListener("keydown",event=>{
 });
 document.addEventListener("input",event=>{
   if(event.target.matches("[data-list-contact-query]"))updateSavedListContactSuggestions(event.target);
+  if(event.target.matches("[data-saved-list-filter]")){
+    const query=normalizeName(event.target.value);
+    const panel=event.target.closest(".saved-contact-searches");
+    panel?.querySelectorAll("[data-list-search-row]").forEach(row=>{row.hidden=!!query&&!row.dataset.listSearchText.includes(query);});
+  }
 });
 document.addEventListener("change",event=>{
   if(event.target.matches('[data-saved-list-builder] select, [data-saved-list-builder] input[name="sourceIds"]'))refreshSavedListBuilder(event.target.closest("[data-saved-list-builder]"));
