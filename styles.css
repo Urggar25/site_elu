@@ -11785,3 +11785,9 @@ body.admin-mode .contact-add-to-list button{min-height:40px}
  body.admin-mode .saved-list-builder-actions button{flex:1 1 140px}
  body.admin-mode .saved-list-workspace .saved-contact-search-item{grid-template-columns:minmax(0,1fr) 36px 40px}
 }
+
+
+body.admin-mode .saved-list-filter-label{display:grid;gap:6px;margin:12px 0 0;color:#455a75;font-size:.82rem;font-weight:700}
+body.admin-mode .saved-list-filter-label input{width:100%;box-sizing:border-box;min-height:42px;padding:10px 13px;border:1px solid #c9d7e8;border-radius:8px;background:#fff;font-size:.9rem}
+body.admin-mode .saved-contact-search-item[hidden]{display:none!important}
+body.admin-mode .saved-list-workspace .saved-contact-search-load small{white-space:normal;line-height:1.3}
