@@ -6611,14 +6611,16 @@ function updateContact(id, form) {
   const data = new FormData(form);
   contactFields().filter((field) => field.id !== "id").forEach((field) => contact[field.id] = contactValueFromForm(data, field));
   synchronizeContactIdentity(contact);
-  registerContactKeywords(contact);
+  // Les tags historiques et le champ moderne restent synchronisés lors d'une modification explicite.
+  if(Object.prototype.hasOwnProperty.call(contact,"tags"))contact.tags=[...contact.keywords];
+  const catalogueChanged=registerContactKeywords(contact);
   const previousId = contact.id;
   assignUniqueContactId(contact, previousId);
   updateContactReferences(previousId, contact.id);
   selectedContactId = contact.id;
   contact.updatedAt = new Date().toISOString();
   if (contact.deathDateApprox) ensureDeathContactMetadata(contact, contact.deathDateApprox);
-  if (previousId === contact.id) {
+  if (previousId === contact.id && !catalogueChanged) {
     saveAdminEntityUpdates([adminEntityUpdate("localContacts", contact)], "modification", "contact", contactDisplayName(contact), previousState);
   } else {
     saveAdminStateToDatabaseOnly("modification", "contact", contactDisplayName(contact), previousState);
@@ -6654,7 +6656,7 @@ function createContact(form) {
     createdAt: now,
     updatedAt: now
   }, usedIds);
-  registerContactKeywords(contact);
+  const catalogueChanged=registerContactKeywords(contact);
   contactFields().filter((field) => !field.system).forEach((field) => {
     if (["id", "firstName", "lastName", "email", "city"].includes(field.id)) return;
     const value = contactValueFromForm(data, field);
@@ -6664,7 +6666,8 @@ function createContact(form) {
   adminState.localContacts.unshift(contact);
   selectedContactId = contact.id;
   form.reset();
-  saveAdminEntityUpdates([adminEntityUpdate("localContacts", contact, { insertIfMissing: true })], "creation", "contact", contactDisplayName(contact), previousState);
+  if(catalogueChanged)saveAdminStateToDatabaseOnly("creation","contact",contactDisplayName(contact),previousState);
+  else saveAdminEntityUpdates([adminEntityUpdate("localContacts", contact, { insertIfMissing: true })], "creation", "contact", contactDisplayName(contact), previousState);
 }
 
 function updateContactReferences(previousId, nextId) {
@@ -8528,6 +8531,7 @@ function registerContactKeywords(contact) {
   const existing=new Set(normalizeKeywords(adminState.contactKeywords||[]).map(w=>slugify(w.id)));
   const missing=contactKeywordValues(contact).filter(label=>!existing.has(slugify(label)));
   if(missing.length)adminState.contactKeywords=normalizeKeywords([...(adminState.contactKeywords||[]),...missing.map(label=>({id:slugify(label),label,color:"#708199"}))]);
+  return missing.length>0;
 }
 
 function applyContactKeywordForm(form) {
