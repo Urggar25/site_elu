@@ -11831,3 +11831,41 @@ body.admin-mode .saved-list-error{padding:12px 16px;margin:10px;border:1px solid
 .legal-form-notice{font-size:.8rem;line-height:1.6;color:#5e7186}
 .legal-inline-link{background:transparent;border:0;padding:0;color:#22639f;text-decoration:underline;cursor:pointer;font:inherit}
 @media(max-width:700px){.legal-info-grid,.legal-contact-panel{grid-template-columns:1fr}.legal-contact-panel>div+div{border-left:0;border-top:1px solid #bed7ec;padding:14px 0 0}.legal-navigation a{flex:1 1 auto;text-align:center}.legal-card{padding:18px}}
+
+
+/* Contact manager: three clear workspaces and a discreet creation shortcut */
+body.admin-mode .contact-search-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+body.admin-mode .contact-create-shortcut{border-color:var(--accent,#366db5);font-weight:700;white-space:nowrap}
+body.admin-mode .contact-io-page{max-width:1200px;margin:0 auto;display:grid;gap:18px}
+body.admin-mode .contact-io-page .contact-io-hero{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap}
+body.admin-mode .contact-io-eyebrow{font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7}
+body.admin-mode .contact-io-page .contact-io-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:6px;background:var(--panel,#f4f6fa);border:1px solid var(--border,#d9e0e8);border-radius:16px}
+body.admin-mode .contact-io-page .contact-io-tabs button{flex:1 1 170px;border-radius:11px;padding:13px 16px;font-weight:750;border:1px solid transparent;cursor:pointer;background:transparent;color:inherit;text-align:center}
+body.admin-mode .contact-io-page .contact-io-tabs button span{opacity:.55;font-size:.72rem;margin-right:9px}
+body.admin-mode .contact-io-page .contact-io-tabs button.is-active{background:var(--surface,#fff);box-shadow:0 3px 14px #10182812;border-color:var(--border,#d9e0e8)}
+body.admin-mode .contact-io-workspace{padding:clamp(18px,3vw,30px);background:var(--surface,#fff);border:1px solid var(--border,#d9e0e8);border-radius:18px;display:grid;gap:23px;min-width:0}
+body.admin-mode .contact-io-workspace-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+body.admin-mode .contact-io-workspace-head h3{margin:0 0 6px;font-size:1.25rem}
+body.admin-mode .contact-io-workspace-head p{margin:0;opacity:.75;max-width:65ch}
+body.admin-mode .contact-io-stat{white-space:nowrap;font-size:.8rem;padding:8px 11px;border-radius:100px;background:var(--panel,#f2f6fa)}
+body.admin-mode .contact-io-import-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+body.admin-mode .contact-io-import-options .contact-io-card{min-width:0;display:grid;align-content:start;gap:12px}
+body.admin-mode .contact-io-import-options .contact-io-card h4{margin:0;font-size:1.05rem}
+body.admin-mode .contact-io-import-options .contact-io-card p{margin:0}
+body.admin-mode .contact-io-export-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+body.admin-mode .contact-io-export-choices .contact-io-choice{display:grid;grid-template-columns:auto 1fr;align-content:start;column-gap:10px;row-gap:6px;padding:17px;border:1px solid var(--border,#d9e0e8);border-radius:13px;cursor:pointer}
+body.admin-mode .contact-io-export-choices .contact-io-choice input{grid-row:span 2;align-self:start}
+body.admin-mode .contact-io-export-choices .contact-io-choice small{grid-column:2}
+body.admin-mode .contact-io-export-choices .contact-io-choice:has(input:checked){border-color:var(--accent,#366db5);background:color-mix(in srgb,var(--accent,#366db5) 7%,transparent)}
+body.admin-mode .contact-io-export-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+body.admin-mode .contact-io-export-actions p{margin:0 auto 0 0;font-size:.85rem;opacity:.75}
+body.admin-mode .contact-create-unified{display:grid;gap:18px;min-width:0}
+body.admin-mode .contact-create-unified .contact-form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+body.admin-mode .contact-create-unified .contact-form-grid>label{min-width:0;display:grid;gap:6px}
+body.admin-mode .contact-create-unified .contact-form-grid>label:has(textarea){grid-column:span 2}
+body.admin-mode .contact-create-unified .contact-tag-editor{grid-column:1/-1}
+body.admin-mode .contact-create-section-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+body.admin-mode .contact-create-section-head span{font-size:.8rem;opacity:.75}
+body.admin-mode .contact-create-footer{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--border,#d9e0e8);padding-top:16px}
+@media(max-width:850px){body.admin-mode .contact-io-import-options,body.admin-mode .contact-io-export-choices{grid-template-columns:1fr}body.admin-mode .contact-create-unified .contact-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:540px){body.admin-mode .contact-io-page .contact-io-tabs button{flex-basis:100%;text-align:left}body.admin-mode .contact-create-unified .contact-form-grid{grid-template-columns:1fr}body.admin-mode .contact-create-unified .contact-form-grid>label:has(textarea){grid-column:auto}body.admin-mode .contact-io-workspace{padding:15px}body.admin-mode .contact-search-head-actions{width:100%}}
