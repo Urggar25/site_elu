@@ -8581,6 +8581,24 @@ document.addEventListener("change",event=>{
   if(form)applyContactKeywordForm(form);
 });
 
+document.addEventListener("keydown",event=>{
+  if(event.key!=="Enter")return;
+  if(event.target.matches("[data-contact-tag-query]")){
+    event.preventDefault();
+    const editor=event.target.closest("[data-contact-tag-editor]");
+    const first=[...editor.querySelectorAll("[data-contact-tag-add]")].find(node=>!node.hidden);
+    if(first)first.click();
+    else editor.querySelector("[data-contact-tag-add-new]")?.click();
+    return;
+  }
+  if(event.target.matches("[data-contact-keyword-query]")){
+    event.preventDefault();
+    const picker=event.target.closest(".contact-keyword-picker");
+    const first=[...picker.querySelectorAll("[data-contact-keyword-option]")].find(node=>!node.hidden);
+    if(first)first.querySelector('input[name="keywordIds"]')?.click();
+    else picker.querySelector("[data-contact-keyword-create]")?.click();
+  }
+});
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
   const savedToggle = event.target.closest("[data-contact-saved-toggle]");
