@@ -2475,6 +2475,7 @@ function renderAdmin() {
   mountDocumentPdfPreview();
   if (activeAdminSection === "saved-contact-searches") {
     hydrateSavedContactStats(document.querySelector("#admin-view .saved-contact-searches"));
+    refreshSavedListBuilder(document.querySelector("[data-saved-list-builder]"));
   }
   if (focusCalendarBodyAfterRender) {
     focusCalendarBodyAfterRender = false;
@@ -3634,7 +3635,9 @@ function exportSavedContactSearch(id) {
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const item = searches.find((entry) => entry.id === id);
   if (!item) return;
-  const contacts = savedSearchContacts(item, searches);
+  const validated=savedListPreview(item,searches);
+  if(validated.error){showToast(validated.error);return;}
+  const contacts=validated.contacts;
   const result = savedSearchExportPreview(contacts);
   const sourceOccurrences = (entry, visited = new Set()) => {
     if (visited.has(entry.id)) return [];
@@ -3674,7 +3677,9 @@ function favoriteSavedContactSearch(id) {
 function exportSavedContactPeople(id) {
   const list=normalizeSavedContactSearches(adminState.savedContactSearches),item=list.find(e=>e.id===id);
   if(!item)return;
-  const contacts=savedSearchContacts(item,list),headers=contactFields().map(f=>f.id);
+  const validated=savedListPreview(item,list);
+  if(validated.error){showToast(validated.error);return;}
+  const contacts=validated.contacts,headers=contactFields().map(f=>f.id);
   const rows=[headers,...contacts.map(c=>headers.map(key=>Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
   downloadFile("personnes-"+slugify(item.name)+".xlsx",participantWorkbookBytes(rows),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   showToast(contacts.length+" personnes exportées, une ligne par fiche.");
@@ -3836,7 +3841,7 @@ function renderSavedContactSearches({ standalone = false } = {}) {
     ${searches.length ? `<div class="saved-contact-searches-list">${searches.map((item) => {
       return `<div class="saved-contact-search-item ${current === item.id ? "is-active" : ""}">
          <button type="button" class="saved-contact-search-load" data-contact-load-search="${attr(item.id)}" title="Afficher la recherche">
-           <strong>${text(item.name)}</strong><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
+           <strong>${text(item.name)}</strong><small>${text(savedContactSearchLabel(item))}${savedListHasDependents(item.id,allSearches).length?` · utilisée par ${savedListHasDependents(item.id,allSearches).length} liste(s)`:""}</small><small data-saved-contact-stats="${attr(item.id)}">Calcul des résultats…</small>
          </button>
          <button type="button" class="saved-search-favorite" data-contact-favorite-search="${attr(item.id)}" title="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}" aria-label="${item.favorite?"Retirer des favoris":"Ajouter aux favoris"}">${item.favorite?"★":"☆"}</button>
          <details class="saved-search-more"><summary aria-label="Actions sur ${attr(item.name)}" title="Plus d’actions">⋯</summary>
@@ -3862,6 +3867,7 @@ function hydrateSavedContactStats(root) {
   if (!root) return;
   const elements = [...root.querySelectorAll("[data-saved-contact-stats]")];
   if (!elements.length) return;
+  const memo=new Map();
   const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
   const lookup = new Map(searches.map((item) => [item.id, item]));
   let index = 0;
@@ -3873,17 +3879,17 @@ function hydrateSavedContactStats(root) {
       const item = lookup.get(node.dataset.savedContactStats);
       if (!item) continue;
       try {
-        const contacts = savedSearchContacts(item, searches);
+        const contacts = evaluateSavedList(item, searches, memo);
         const summary = savedSearchExportPreview(contacts);
         const sources = item.sourceIds?.map((id) => lookup.get(id)).filter(Boolean) || [];
-        const overlapCount = Math.max(0, sources.reduce((count, source) => count + savedSearchContacts(source, searches).length, 0) - contacts.length);
+        const overlapCount = Math.max(0, sources.reduce((count, source) => count + evaluateSavedList(source, searches, memo).length, 0) - contacts.length);
         node.textContent = savedContactSearchLabel(item) + " · " + contacts.length +
           " contacts · " + summary.rows.length + " adresses · " + (summary.totalAvoided + overlapCount) +
           " doublon(s) évité(s) (" + overlapCount + " entre recherches, " +
           summary.personDuplicates + " personnes, " + summary.addressDuplicates + " adresses)";
       } catch (error) {
         console.error("Statistiques de recherche sauvegardée :", error);
-        node.textContent = "Statistiques indisponibles (la recherche reste utilisable).";
+        node.textContent = "⚠ "+(error.message||"Liste invalide")+" — vérifiez ses sources.";
       }
       break;
     }
@@ -4868,6 +4874,7 @@ function renderContacts() {
           <button class="secondary-action compact" type="button" data-contact-select-page>Sélectionner cette page</button>
           <button class="secondary-action compact" type="button" data-contact-select-filtered>Sélectionner les ${contacts.length} résultats</button>
           <button class="secondary-action compact" type="button" data-contact-clear-selection>Vider</button>
+          <button class="secondary-action compact" type="button" data-contact-list-from-selection ${selectedCount?"":"disabled"}>Créer une liste avec la sélection</button>
           ${isAdmin() ? `<button class="secondary-action compact danger" type="button" data-delete-selected-contacts ${selectedCount ? "" : "disabled"}>Supprimer la sélection</button>` : ""}
           <small>${selectedInResults} selectionne(s) dans les resultats filtres</small>
         </div>
@@ -9559,6 +9566,23 @@ document.addEventListener("click", async (event) => {
     const remove=event.target.closest("[data-list-remove-member]");
     if(remove){remove.closest("[data-list-member]")?.remove();refreshSavedListBuilder(formBuilder);return;}
     if(event.target.closest("[data-list-refresh-preview]")){refreshSavedListBuilder(formBuilder);return;}
+  }
+  if(event.target.closest("[data-contact-list-from-selection]")){
+    const filters=contactSearchFilters();
+    const contacts=isAllFilteredContactSelectionActive(filters)?filteredContacts():adminState.localContacts.filter(c=>selectedContactIds.has(c.id)&&c.entityType!=="institution");
+    if(!contacts.length){showToast("Sélectionnez des contacts.");return;}
+    const name=prompt("Nom de la liste manuelle");
+    if(name===null)return;
+    const clean=String(name).trim().slice(0,120);
+    if(!clean){showToast("Saisissez un nom valide.");return;}
+    const searches=normalizeSavedContactSearches(adminState.savedContactSearches),now=new Date().toISOString();
+    const item={id:crypto.randomUUID(),name:clean,listType:"manual",includeIds:contacts.map(c=>c.id),excludeIds:[],filters:{},createdAt:now,updatedAt:now,createdBy:currentUserId};
+    adminState.savedContactSearches=[item,...searches];
+    clearContactSelection();
+    adminFilters.activeSavedContactSearchId=item.id;
+    saveAdminState("creation","recherche contact enregistree",clean);
+    showToast("Liste manuelle créée : "+contacts.length+" contact(s).");
+    return;
   }
   const contactListAdd=event.target.closest("[data-contact-add-to-list]");
   if(contactListAdd){
