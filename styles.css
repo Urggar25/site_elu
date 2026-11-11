@@ -11737,3 +11737,51 @@ body.admin-mode .contact-tag-help {margin:0;font-size:.75rem;color:#718096}
  body.admin-mode .contact-tag-search {grid-template-columns:minmax(0,1fr) auto}
  body.admin-mode .contact-tag-editor {padding:11px}
 }
+
+
+/* Workspace for saved searches and user-curated contact lists */
+body.admin-mode .saved-list-workspace{display:grid;gap:16px;padding:16px;max-width:1480px}
+body.admin-mode .saved-list-workspace>.contact-search-head{padding:5px 4px}
+body.admin-mode .saved-list-workspace>.saved-contact-searches{margin:0}
+body.admin-mode .saved-list-builder-panel{border:1px solid #dce5f0;background:#fff;border-radius:14px;padding:clamp(14px,2vw,24px);box-shadow:0 8px 28px rgba(25,43,70,.055);display:grid;gap:17px}
+body.admin-mode .saved-list-builder-panel>header{display:flex;align-items:start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+body.admin-mode .saved-list-builder-panel h3{margin:0;font-size:1.17rem;color:#243d5f}
+body.admin-mode .saved-list-builder-panel header p{margin:5px 0 0;color:#64758d;font-size:.85rem}
+body.admin-mode .saved-list-builder-panel form{display:grid;gap:15px}
+body.admin-mode .saved-list-builder-panel label{display:grid;gap:6px;font-size:.82rem;font-weight:700;color:#405570;min-width:0}
+body.admin-mode .saved-list-builder-panel input[type="text"],body.admin-mode .saved-list-builder-panel input[type="search"],body.admin-mode .saved-list-builder-panel input[name="name"],body.admin-mode .saved-list-builder-panel select{width:100%;min-width:0;box-sizing:border-box;border:1px solid #c4d1e3;border-radius:8px;background:#fff;padding:10px 12px;min-height:42px;font-size:.88rem;color:#253953}
+body.admin-mode .saved-list-builder-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+body.admin-mode .saved-list-base,body.admin-mode .saved-list-merge,body.admin-mode .saved-list-manual{display:grid;gap:12px}
+body.admin-mode .saved-list-base[hidden],body.admin-mode .saved-list-merge[hidden],body.admin-mode .saved-list-manual[hidden],body.admin-mode .saved-list-exceptions[hidden]{display:none!important}
+body.admin-mode .saved-list-merge fieldset{border:1px solid #dde5f0;border-radius:10px;margin:0;padding:12px}
+body.admin-mode .saved-list-merge legend{font-size:.81rem;font-weight:800;color:#334968;padding:0 6px}
+body.admin-mode .saved-list-source-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:200px;overflow:auto}
+body.admin-mode .saved-list-source-options label{display:flex;align-items:center;gap:8px;border:1px solid #e0e8f3;border-radius:8px;padding:8px;background:#f9fbfe;cursor:pointer;font-weight:500;overflow-wrap:anywhere}
+body.admin-mode .saved-list-source-options label:has(input:checked){background:#edf5ff;border-color:#99b8e2}
+body.admin-mode .saved-list-source-options input{flex:none}
+body.admin-mode .saved-list-exceptions{display:grid;gap:11px;border:1px solid #e1e8f2;background:#f9fbff;padding:14px;border-radius:10px}
+body.admin-mode .saved-list-exceptions>strong{font-size:.84rem;color:#2c496f}
+body.admin-mode .saved-list-members{display:flex;flex-wrap:wrap;gap:7px;min-height:20px}
+body.admin-mode .saved-list-member{display:inline-flex;align-items:center;gap:7px;background:#e9f3ff;border:1px solid #bfd5f0;color:#1b568e;border-radius:99px;font-size:.8rem;padding:5px 6px 5px 10px;max-width:100%}
+body.admin-mode .saved-list-member>span{overflow-wrap:anywhere}
+body.admin-mode .saved-list-member button{border:0;border-radius:50%;background:transparent;cursor:pointer;color:#a03648;font-size:1.15rem;line-height:1;min-height:24px;min-width:24px}
+body.admin-mode .saved-list-contact-results{display:flex;gap:7px;flex-wrap:wrap;max-height:170px;overflow:auto}
+body.admin-mode .saved-list-contact-results button{display:flex;align-items:center;gap:6px;border-radius:8px;border:1px solid #d7e4f3;background:white;padding:8px 10px;cursor:pointer;font-size:.8rem;color:#2b496c}
+body.admin-mode .saved-list-contact-results button:hover{background:#eaf4ff;border-color:#88b1e3}
+body.admin-mode .saved-list-contact-results button small{color:#78879a}
+body.admin-mode .saved-list-preview{border:1px solid #c8daf0;border-left:4px solid #3674bc;background:#f0f7ff;color:#274768;border-radius:9px;padding:12px 14px;font-size:.87rem;line-height:1.5;overflow-wrap:anywhere}
+body.admin-mode .saved-list-builder-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}
+body.admin-mode .saved-list-builder-actions button{min-height:42px}
+body.admin-mode .saved-list-workspace .saved-contact-searches-list{max-height:unset;min-height:0;overflow:visible}
+body.admin-mode .saved-list-workspace .saved-contact-search-item{grid-template-columns:minmax(0,1fr) 40px 42px}
+body.admin-mode .contact-add-to-list{display:flex;align-items:end;gap:8px;padding:12px;border:1px solid #dbe5f0;background:#f7faff;border-radius:9px;margin:12px 0;flex-wrap:wrap}
+body.admin-mode .contact-add-to-list label{display:grid;gap:4px;flex:1 1 210px;font-size:.82rem;font-weight:750;color:#375375}
+body.admin-mode .contact-add-to-list select{min-height:40px;width:100%;min-width:0}
+body.admin-mode .contact-add-to-list button{min-height:40px}
+@media(max-width:760px){
+ body.admin-mode .saved-list-workspace{padding:10px;gap:12px}
+ body.admin-mode .saved-list-builder-grid{grid-template-columns:1fr}
+ body.admin-mode .saved-list-source-options{grid-template-columns:1fr}
+ body.admin-mode .saved-list-builder-actions button{flex:1 1 140px}
+ body.admin-mode .saved-list-workspace .saved-contact-search-item{grid-template-columns:minmax(0,1fr) 36px 40px}
+}
