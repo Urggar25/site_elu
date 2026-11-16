@@ -744,19 +744,35 @@ function participantXmlText(value) {
   return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function participantWorkbookBytes(rows) {
-  // Generates a real, uncompressed OOXML .xlsx file without a third-party script or CDN.
+function participantWorkbookBytes(rows, sheetDefinitions = null) {
+  // Real OOXML workbook: single sheet by default, or one tab per supplied definition.
   const ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const sheet = xml + `<worksheet xmlns="${ns}"><cols>${[17, 22, 24, 23, 33, 20].map((width, i) => `<col min="${i+1}" max="${i+1}" width="${width}" customWidth="1"/>`).join("")}</cols><sheetData>` +
-    rows.map((row, index) => `<row r="${index + 1}">` + row.map((value, i) => `<c r="${letters[i]}${index + 1}" t="inlineStr"><is><t xml:space="preserve">${participantXmlText(value)}</t></is></c>`).join("") + "</row>").join("") + "</sheetData></worksheet>";
+  const definitions = sheetDefinitions || [{ name: "Participants", rows }];
+  const usedNames = new Set();
+  const sheets = definitions.map((definition, index) => {
+    const rawName = String(definition.name || "Feuille " + (index + 1)).replace(/[\\/?*\[\]:]/g, " ").replace(/^'+|'+$/g, "").trim() || "Feuille";
+    let name = rawName.slice(0, 31), counter = 2;
+    while (usedNames.has(name.toLocaleLowerCase("fr"))) {
+      const suffix = " (" + counter++ + ")";
+      name = rawName.slice(0, 31 - suffix.length) + suffix;
+    }
+    usedNames.add(name.toLocaleLowerCase("fr"));
+    const content = xml + `<worksheet xmlns="${ns}"><sheetData>` +
+      definition.rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">` + row.map((value, colIndex) => {
+        let column = "", n = colIndex + 1;
+        while (n) { n--; column = String.fromCharCode(65 + n % 26) + column; n = Math.floor(n / 26); }
+        return `<c r="${column}${rowIndex + 1}" t="inlineStr"><is><t xml:space="preserve">${participantXmlText(value)}</t></is></c>`;
+      }).join("") + "</row>").join("") + "</sheetData></worksheet>";
+    return { name, content, number: index + 1 };
+  });
+  if (sheets.length > 65534) throw new Error("Nombre d'onglets Excel trop élevé.");
   const parts = [
-    ["[Content_Types].xml", xml + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>'],
+    ["[Content_Types].xml", xml + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + sheets.map(sheet => `<Override PartName="/xl/worksheets/sheet${sheet.number}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") + '</Types>'],
     ["_rels/.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
-    ["xl/workbook.xml", xml + `<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Participants" sheetId="1" r:id="rId1"/></sheets></workbook>`],
-    ["xl/_rels/workbook.xml.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>'],
-    ["xl/worksheets/sheet1.xml", sheet]
+    ["xl/workbook.xml", xml + `<workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` + sheets.map(sheet => `<sheet name="${participantXmlText(sheet.name)}" sheetId="${sheet.number}" r:id="rId${sheet.number}"/>`).join("") + "</sheets></workbook>"],
+    ["xl/_rels/workbook.xml.rels", xml + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + sheets.map(sheet => `<Relationship Id="rId${sheet.number}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${sheet.number}.xml"/>`).join("") + '</Relationships>'],
+    ...sheets.map(sheet => [`xl/worksheets/sheet${sheet.number}.xml`, sheet.content])
   ];
   const encoder = new TextEncoder();
   const files = parts.map(([name, contents]) => ({ name: encoder.encode(name), body: encoder.encode(contents) }));
@@ -3608,6 +3624,21 @@ function savedListPreview(item,searches) {
   catch(error){return {contacts:[],error:error.message||"Liste invalide"};}
 }
 
+function savedSearchCivility(contact) {
+  const value = String(contact.gender ?? contact.genre ?? "").trim().toLowerCase();
+  if (value === "2" || ["m", "m.", "monsieur"].includes(value)) return "M.";
+  if (value === "1" || ["f", "mme", "mme.", "madame"].includes(value)) return "Mme.";
+  return "";
+}
+
+function savedSearchPersonExportRow(contact) {
+  return [
+    savedSearchCivility(contact), contact.firstName || "", contact.lastName || contact.usageName || "",
+    [contact.streetNumber, contact.streetNameFull || contact.streetName].filter(Boolean).join(" ").trim(),
+    contact.postalCode || "", contact.city || "", contact.mobile || contact.phone || "", contact.email || ""
+  ];
+}
+
 function savedSearchExportPreview(contacts) {
   // Deduplicate identities first, then households/addresses. Never modify the actual contact database.
   const uniquePeople = new Map();
@@ -3637,6 +3668,7 @@ function savedSearchExportPreview(contacts) {
     const first = group[0];
     const unique = (field) => [...new Set(group.map(field).map((v) => String(v || "").trim()).filter(Boolean))].join(" ; ");
     return [
+      unique(savedSearchCivility),
       unique((c) => c.firstName), unique((c) => c.lastName || c.usageName),
       [first.streetNumber, first.streetNameFull || first.streetName].filter(Boolean).join(" ").trim(),
       first.postalCode || "", first.city || "",
@@ -3671,10 +3703,50 @@ function exportSavedContactSearch(id) {
       : savedSearchContacts(entry, searches);
   };
   const overlaps = item.sourceIds?.length && item.mergeMode === "OR" ? Math.max(0, sourceOccurrences(item).length - contacts.length) : 0;
-  const rows = [["Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"], ...result.rows];
+  const rows = [["Civilité", "Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"], ...result.rows];
   downloadFile("recherche-" + slugify(item.name) + ".xlsx", participantWorkbookBytes(rows),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   showToast(result.rows.length + " adresses exportées · " + (result.totalAvoided + overlaps) + " doublon(s) évité(s), dont " + overlaps + " répétitions entre recherches.");
+}
+
+function exportSavedContactByKeyword(id) {
+  const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
+  const item = searches.find(entry => entry.id === id);
+  if (!item) return;
+  const validated = savedListPreview(item, searches);
+  if (validated.error) { showToast(validated.error); return; }
+  const contacts = validated.contacts;
+  const header = ["Civilité", "Prénom", "Nom", "Adresse", "Code postal", "Commune", "Téléphone", "Mail"];
+  const groups = new Map();
+  const choices = new Map(contactKeywordChoices().map(word => [word.id, word.label]));
+  for (const contact of contacts) {
+    const words = contactKeywordValues(contact);
+    const seen = new Set();
+    for (const word of words.length ? words : ["Sans mot-clé"]) {
+      const key = words.length ? slugify(word) : "__sans_mot_cle__";
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (!groups.has(key)) groups.set(key, { name: choices.get(key) || word, contacts: [] });
+      groups.get(key).contacts.push(contact);
+    }
+  }
+  if (!groups.size) groups.set("__vide__", { name: "Aucun contact", contacts: [] });
+  const tabs = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }))
+    .map(group => ({
+      name: group.name,
+      rows: [header, ...group.contacts.sort((a, b) =>
+        String(a.lastName || a.usageName || "").localeCompare(String(b.lastName || b.usageName || ""), "fr", { sensitivity: "base" })
+      ).map(savedSearchPersonExportRow)]
+    }));
+  try {
+    downloadFile("recherche-mots-cles-" + slugify(item.name) + ".xlsx",
+      participantWorkbookBytes(null, tabs),
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    showToast(tabs.length + " onglet(s) exporté(s) · " + contacts.length + " contact(s) de la recherche.");
+  } catch (error) {
+    console.error("Export Excel par mot-clé :", error);
+    showToast("Export impossible : " + (error.message || "erreur de génération Excel"));
+  }
 }
 
 function freezeSavedContactSearch(id) {
@@ -3870,6 +3942,7 @@ function renderSavedContactSearches({ standalone = false } = {}) {
            <div class="saved-search-actions" role="group" aria-label="Actions sur ${attr(item.name)}">
              <button type="button" data-contact-export-search="${attr(item.id)}">Exporter par adresse</button>
              <button type="button" data-contact-export-people="${attr(item.id)}">Exporter par personne</button>
+             <button type="button" data-contact-export-keywords="${attr(item.id)}">Exporter par mot-clé (onglets Excel)</button>
              <button type="button" data-contact-freeze-search="${attr(item.id)}">Figer la liste</button>
              <button type="button" data-list-rename="${attr(item.id)}">Renommer</button>
              <button type="button" data-list-duplicate="${attr(item.id)}">Dupliquer</button>
@@ -9652,6 +9725,8 @@ document.addEventListener("click", async (event) => {
   if(freezeSearch){freezeSavedContactSearch(freezeSearch.dataset.contactFreezeSearch);return;}
   const favoriteSearch=event.target.closest("[data-contact-favorite-search]");
   if(favoriteSearch){favoriteSavedContactSearch(favoriteSearch.dataset.contactFavoriteSearch);return;}
+  const keywordExport = event.target.closest("[data-contact-export-keywords]");
+  if (keywordExport) { exportSavedContactByKeyword(keywordExport.dataset.contactExportKeywords); return; }
   const searchExport = event.target.closest("[data-contact-export-search]");
   if (searchExport) { exportSavedContactSearch(searchExport.dataset.contactExportSearch); return; }
   if (event.target.closest("[data-contact-merge-searches]")) { mergeSavedContactSearches(); return; }
