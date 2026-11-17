@@ -155,7 +155,7 @@ async function bulkReadExcel(file) {
 }
 function bulkAutoMapping(headers) {
   const aliases=contactImportAliases();
-  return headers.map(h=>{const id=aliases[slugify(h).replace(/-/g,"")]||"";return ["lastName","firstName","city","birthDate"].includes(id)?"match_"+id:id;});
+  return headers.map(h=>{const key=slugify(h).replace(/-/g,"");const id=aliases[key]||(key==="commune"||key==="municipalite"?"city":"");return ["lastName","firstName","city","birthDate"].includes(id)?"match_"+id:id;});
 }
 function bulkSelectedTags(root,name) {
   return [...root.querySelectorAll('input[name="'+name+'"]:checked')].map(input=>input.value);
