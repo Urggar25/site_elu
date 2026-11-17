@@ -1908,6 +1908,7 @@ function normalizeContactRecord(contact = {}, usedIds = new Set()) {
   }
   normalized.id = id;
   usedIds.add(id);
+  synchronizeDeathKeyword(normalized);
   return normalized;
 }
 
@@ -2004,14 +2005,14 @@ function contactQuickSearchText(contact = {}) {
   return value;
 }
 
-function searchContacts(query = "", { limit = 25, excludeIds = [] } = {}) {
+function searchContacts(query = "", { limit = 25, excludeIds = [], includeDeceased = false } = {}) {
   const normalizedQuery = normalizeName(query);
   if (normalizedQuery.length < 2) return [];
   const excluded = new Set(excludeIds.filter(Boolean));
   const matches = [];
   const maxCandidates = Math.max(limit * 4, limit);
   for (const contact of adminState.localContacts || []) {
-    if (excluded.has(contact.id)) continue;
+    if (excluded.has(contact.id) || (!includeDeceased && isContactDeceased(contact))) continue;
     if (!contactQuickSearchText(contact).includes(normalizedQuery)) continue;
     matches.push(contact);
     if (matches.length >= maxCandidates) break;
@@ -2028,7 +2029,7 @@ function contactFieldSearchText(contact = {}, field = "") {
   return contactQuickSearchText(contact);
 }
 
-function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [] } = {}) {
+function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [], includeDeceased = true } = {}) {
   const activeFilters = Object.entries(filters)
     .map(([field, value]) => [field, normalizeName(value)])
     .filter(([, value]) => value.length >= 2);
@@ -2037,7 +2038,7 @@ function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [] } = 
   const matches = [];
   const maxCandidates = Math.max(limit * 4, limit);
   for (const contact of adminState.localContacts || []) {
-    if (excluded.has(contact.id)) continue;
+    if (excluded.has(contact.id) || (!includeDeceased && isContactDeceased(contact))) continue;
     if (!activeFilters.every(([field, value]) => contactFieldSearchText(contact, field).includes(value))) continue;
     matches.push(contact);
     if (matches.length >= maxCandidates) break;
@@ -2404,17 +2405,30 @@ function isDeathKeyword(value = "") {
 }
 
 function contactHasDeathKeyword(contact = {}) {
-  return (contact.keywords || []).some(isDeathKeyword);
+  return contactKeywordValues(contact).some(isDeathKeyword);
 }
 
 function ensureDeathContactMetadata(contact, deathDate = "") {
   if (!contact) return;
   const keywords = Array.isArray(contact.keywords) ? contact.keywords : String(contact.keywords || "").split(/[,;]/).map((item) => item.trim()).filter(Boolean);
-  contact.keywords = keywords.some(isDeathKeyword) ? keywords : [...keywords, "décès"];
-  contact.deathDateApprox = deathDate || contact.deathDateApprox || "décès";
+  contact.keywords = ["décès"];
+  contact.tags = ["décès"];
+  contact.deathDateApprox = deathDate || contact.deathDateApprox || "";
   contact.updatedAt = new Date().toISOString();
 }
 
+function synchronizeDeathKeyword(contact) {
+  if (!contact) return;
+  const values = contactKeywordValues(contact);
+  if (values.some(isDeathKeyword)) {
+    contact.keywords = ["décès"];
+    contact.tags = ["décès"];
+  } else {
+    contact.keywords = [...new Set(values)];
+    contact.tags = [...contact.keywords];
+    contact.deathDateApprox = "";
+  }
+}
 function groupBy(items, getKey) {
   return items.reduce((acc, item) => {
     const key = getKey(item);
@@ -3504,7 +3518,7 @@ function contactSearchFilters() {
     const value = String(filters[contactFilterKey(field)] || "").trim();
     if (value || ["empty","not_empty"].includes(filters["op_"+field.id])) fields[field.id] = value;
   });
-  return {q:String(filters.q||""),page,perPage,fields,extraRules:normalizeContactExtraRules(filters.extraRules),ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
+  return {includeDeceased:filters.includeDeceased===true||filters.includeDeceased==="1",q:String(filters.q||""),page,perPage,fields,extraRules:normalizeContactExtraRules(filters.extraRules),ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
 }
 
 
@@ -3518,7 +3532,7 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder","includeDeceased"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
@@ -3546,6 +3560,7 @@ function savedContactSearchFilters(form) {
   filters.keywordIds = normalizedContactKeywordIds(new FormData(form).getAll("keywordIds"));
   filters.keywordMode = values.keywordMode === "AND" ? "AND" : "OR";
   filters.extraRules=contactExtraRulesFromForm(form);
+  filters.includeDeceased = values.includeDeceased === "1" ? "1" : "";
   return filters;
 }
 
@@ -3593,7 +3608,7 @@ function evaluateSavedList(item, searches=normalizeSavedContactSearches(adminSta
     result=filteredContacts({
       q:filters.q||"",
       fields:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("field_")).map(([key,value])=>[key.slice(6),value])),
-      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,extraRules:filters.extraRules,
+      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,extraRules:filters.extraRules,includeDeceased:filters.includeDeceased==="1",
       ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),
       fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
     });
@@ -4051,7 +4066,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, extraRules:normalizeContactExtraRules(filters.extraRules), ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
+  return JSON.stringify({ includeDeceased:filters.includeDeceased===true,activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, extraRules:normalizeContactExtraRules(filters.extraRules), ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -4094,10 +4109,10 @@ function filteredContacts(filters = contactSearchFilters()) {
   if (arguments.length === 0 && adminFilters.activeSavedContactSearchId) {
     const searches = normalizeSavedContactSearches(adminState.savedContactSearches);
     const active = searches.find((item) => item.id === adminFilters.activeSavedContactSearchId);
-    if (active?.sourceIds?.length||active?.isSnapshot||["manual","hybrid"].includes(active?.listType)) return savedSearchContacts(active, searches);
+    if (active?.sourceIds?.length||active?.isSnapshot||["manual","hybrid"].includes(active?.listType)) return savedSearchContacts(active, searches).filter(c=>filters.includeDeceased||!isContactDeceased(c));
   }
   const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-  const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&contactMatchesFilters(c,filters,fieldsById));
+  const results=adminState.localContacts.filter(c=>c.entityType!=="institution"&&(filters.includeDeceased===true||filters.includeDeceased==="1"||!isContactDeceased(c))&&contactMatchesFilters(c,filters,fieldsById));
   if(filters.sortBy){const key=filters.sortBy,d=filters.sortOrder==="desc"?-1:1;results.sort((a,b)=>d*String(a[key]||"").localeCompare(String(b[key]||""),"fr",{sensitivity:"base",numeric:true}));}
   return results;
 }
@@ -4935,7 +4950,7 @@ function renderContacts() {
   const page = Math.min(filters.page, pageCount);
   const pageContacts = contacts.slice((page - 1) * filters.perPage, page * filters.perPage);
   const selected = contacts.find(contact=>contact.id===selectedContactId) || contacts[0];
-  if (selected) selectedContactId = selected.id;
+  selectedContactId = selected?.id || "";
   const selectedCount = allFilteredSelected ? contacts.length : selectedContactIds.size;
   const selectedInResults = allFilteredSelected ? contacts.length : contacts.filter((contact) => selectedContactIds.has(contact.id)).length;
   const activeList = normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);
@@ -4957,6 +4972,7 @@ function renderContacts() {
           <span class="contact-quick-help">Affinez par prénom, nom ou commune.</span>
         </div>
         
+        <label class="check-line contact-deceased-filter"><input type="checkbox" name="includeDeceased" value="1" ${filters.includeDeceased ? "checked" : ""} /> Afficher les contacts décédés</label>
         ${renderContactKeywordFilters(filters)}
         ${renderContactDynamicFilters(filters)}
         ${renderContactFilterChips(filters)}
@@ -6600,7 +6616,7 @@ function isTaskLate(task) {
 }
 
 function isContactDeceased(contact) {
-  return Boolean(contact?.deathDateApprox || contactHasDeathKeyword(contact));
+  return Boolean(contact && contactHasDeathKeyword(contact));
 }
 
 function taskFromForm(form, existing = {}) {
@@ -6890,14 +6906,14 @@ function updateContact(id, form) {
   contactFields().filter((field) => field.id !== "id").forEach((field) => contact[field.id] = contactValueFromForm(data, field));
   synchronizeContactIdentity(contact);
   // Les tags historiques et le champ moderne restent synchronisés lors d'une modification explicite.
-  if(Object.prototype.hasOwnProperty.call(contact,"tags"))contact.tags=[...contact.keywords];
+  contact.tags = [...contact.keywords];
+  synchronizeDeathKeyword(contact);
   const catalogueChanged=registerContactKeywords(contact);
   const previousId = contact.id;
   assignUniqueContactId(contact, previousId);
   updateContactReferences(previousId, contact.id);
   selectedContactId = contact.id;
   contact.updatedAt = new Date().toISOString();
-  if (contact.deathDateApprox) ensureDeathContactMetadata(contact, contact.deathDateApprox);
   if (previousId === contact.id && !catalogueChanged) {
     saveAdminEntityUpdates([adminEntityUpdate("localContacts", contact)], "modification", "contact", contactDisplayName(contact), previousState);
   } else {
@@ -6924,6 +6940,7 @@ function createContact(form) {
   // Keep the modern keyword field and any legacy tags compatible with the editor.
   contact.keywords = [...new Set(contact.keywords.map(value => String(value).trim()).filter(Boolean))];
   contact.tags = [...contact.keywords];
+  synchronizeDeathKeyword(contact);
   if (!String(contact.lastName || "").trim()) {
     showToast("Renseignez au minimum le nom du contact.");
     return;
@@ -8799,7 +8816,7 @@ function addContactTag(editor,label) {
   const values=String(hidden.value||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
   const id=slugify(label);
   if(id==="item"||values.some(v=>slugify(v)===id))return;
-  hidden.value=[...values,label].join(", ");
+  hidden.value=isDeathKeyword(label) ? "décès" : (values.some(isDeathKeyword) ? label : [...values,label].join(", "));
   const input=editor.querySelector("[data-contact-tag-query]");
   if(input)input.value="";
   editor.dataset.expanded="";
