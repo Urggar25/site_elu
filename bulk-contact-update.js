@@ -67,7 +67,7 @@ function bulkEvaluateExcel(rows, mapping, mode, scopeContacts) {
   const items=[],usedIds=new Set(),errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0};
   rows.forEach((row,i)=>{
     if(!row.some(v=>String(v??"").trim()))return;
-    const key=bulkKey(row[keys.lastName],row[keys.firstName],row[mode==="birth"?"birthDate":"city"],mode);
+    const key=bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode);
     if(!key){errors.invalid++;return;}
     const matches=index.get(key)||[];
     if(!matches.length){errors.unmatched++;return;}
@@ -181,7 +181,7 @@ function bulkExcelPanel() {
 function bulkTagPanel() {
   const choices=contactKeywordChoices(),state=bulkContactUpdate;
   return '<section class="bulk-contact-card"><h4>Ajouter et retirer des mots-clés</h4><p>Sélectionnez un ou plusieurs mots-clés existants ; seules les fiches du périmètre choisi seront concernées. Le mot-clé « décès » reste exclusif.</p>'+
-    '<div class="bulk-contact-tag-grids"><fieldset><legend>À ajouter</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkAdd" value="'+attr(w.label)+'"> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset><fieldset><legend>À retirer</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkRemove" value="'+attr(w.label)+'"> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset></div>'+
+    '<div class="bulk-contact-tag-grids"><fieldset><legend>À ajouter</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkAdd" value="'+attr(w.label)+'" '+((state.tagAdd||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset><fieldset><legend>À retirer</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkRemove" value="'+attr(w.label)+'" '+((state.tagRemove||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset></div>'+
     '<button type="button" class="primary-action" data-bulk-tag-preview>Prévisualiser les changements</button></section>'+
     (state.preview&&state.mode==="tags"?bulkPreviewHtml(state.preview):"");
 }
@@ -239,11 +239,11 @@ if(typeof document!=="undefined"){
     if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;return;}
     if(t.matches("[data-bulk-scope]")){bulkContactUpdate.scope=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;return;}
-    if(t.matches('input[name="bulkAdd"],input[name="bulkRemove"]')){bulkContactUpdate.preview=null;}
+    if(t.matches('input[name="bulkAdd"],input[name="bulkRemove"]')){bulkContactUpdate.preview=null;const pane=t.closest(".bulk-contact-workspace");bulkContactUpdate.tagAdd=bulkSelectedTags(pane,"bulkAdd");bulkContactUpdate.tagRemove=bulkSelectedTags(pane,"bulkRemove");}
   });
   document.addEventListener("click",async event=>{
     const t=event.target,s=bulkContactUpdate;
-    if(t.closest("[data-bulk-mode]")){s.mode=t.closest("[data-bulk-mode]").dataset.bulkMode;s.preview=null;s.error="";renderAdmin();return;}
+    if(t.closest("[data-bulk-mode]")){s.mode=t.closest("[data-bulk-mode]").dataset.bulkMode;s.scope=s.mode==="tags"?(selectedContactIds.size?"selected":"results"):"all";s.preview=null;s.error="";renderAdmin();return;}
     if(t.closest("[data-bulk-preview]")){
       s.error="";s.preview=null;
       try{
