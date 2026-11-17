@@ -212,7 +212,9 @@ async function bulkCommit() {
   for(const item of preview.items) {
     const contact=current.get(item.id);
     const previousId=contact.id;
+    const oldName=contact.lastName,oldUsage=contact.usageName;
     Object.assign(contact,item.changes);
+    if(Object.prototype.hasOwnProperty.call(item.changes,"lastName")&&!Object.prototype.hasOwnProperty.call(item.changes,"usageName")&&bulkNormalize(oldUsage)===bulkNormalize(oldName)) contact.usageName=contact.lastName;
     if(["firstName","lastName","usageName","birthName","birthDate"].some(id=>Object.prototype.hasOwnProperty.call(item.changes,id))) {
       synchronizeContactIdentity(contact);
       assignUniqueContactId(contact,previousId);
