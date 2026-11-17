@@ -28,7 +28,7 @@ function bulkContactKey(contact, mode) {
 function bulkColumns(headers, mode, mapping) {
   const out = {};
   ["lastName","firstName",mode === "birth" ? "birthDate" : "city"].forEach(field=>{
-    const indexes = mapping.map((id,i)=>id===field?i:-1).filter(i=>i>=0);
+    const indexes = mapping.map((id,i)=>id==="match_"+field?i:-1).filter(i=>i>=0);
     if(indexes.length!==1)throw new Error("Associez une seule colonne à "+field+" pour identifier les contacts.");
     out[field]=indexes[0];
   });
@@ -36,7 +36,7 @@ function bulkColumns(headers, mode, mapping) {
 }
 function bulkEligibleFields() {
   // Une modification de l'identité changerait l'ID de la fiche et ses liens : volontairement exclue.
-  const blocked = new Set(["id","firstName","lastName","usageName","birthName","birthDate","keywords","deathDateApprox","createdAt","updatedAt","tags"]);
+  const blocked = new Set(["id","keywords","deathDateApprox","createdAt","updatedAt","tags"]);
   return contactFields().filter(f=>!blocked.has(f.id));
 }
 function bulkScopeContacts(scope, listId) {
@@ -155,7 +155,7 @@ async function bulkReadExcel(file) {
 }
 function bulkAutoMapping(headers) {
   const aliases=contactImportAliases();
-  return headers.map(h=>aliases[slugify(h).replace(/-/g,"")]||"");
+  return headers.map(h=>{const id=aliases[slugify(h).replace(/-/g,"")]||"";return ["lastName","firstName","city","birthDate"].includes(id)?"match_"+id:id;});
 }
 function bulkSelectedTags(root,name) {
   return [...root.querySelectorAll('input[name="'+name+'"]:checked')].map(input=>input.value);
@@ -172,7 +172,7 @@ function bulkScopeSelector() {
 }
 function bulkExcelPanel() {
   const state=bulkContactUpdate;
-  const fields=[["","Ignorer cette colonne"],["lastName","Clé : Nom"],["firstName","Clé : Prénom"],["city","Clé : Commune"],["birthDate","Clé : Date de naissance"],...bulkEligibleFields().filter(f=>!["city"].includes(f.id)).map(f=>[f.id,f.label])];
+  const fields=[["","Ignorer cette colonne"],["match_lastName","Clé : Nom"],["match_firstName","Clé : Prénom"],["match_city","Clé : Commune"],["match_birthDate","Clé : Date de naissance"],...bulkEligibleFields().map(f=>[f.id,"Modifier : "+f.label])];
   const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les trois colonnes d’identité servent uniquement au rapprochement. Les autres champs sont mis à jour lorsque la cellule n’est pas vide.</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select></label>').join("")+'</div></section>':"";
   const preview=state.preview&&state.mode==="excel"?bulkPreviewHtml(state.preview):"";
   return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV. Le fichier est analysé dans votre navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
@@ -211,7 +211,14 @@ async function bulkCommit() {
   const now=new Date().toISOString();
   for(const item of preview.items) {
     const contact=current.get(item.id);
+    const previousId=contact.id;
     Object.assign(contact,item.changes);
+    if(["firstName","lastName","usageName","birthName","birthDate"].some(id=>Object.prototype.hasOwnProperty.call(item.changes,id))) {
+      synchronizeContactIdentity(contact);
+      assignUniqueContactId(contact,previousId);
+      updateContactReferences(previousId,contact.id);
+      if(selectedContactId===previousId)selectedContactId=contact.id;
+    }
     if(item.changes.keywords) {
       contact.tags=[...contact.keywords];
       synchronizeDeathKeyword(contact);
@@ -219,7 +226,7 @@ async function bulkCommit() {
     contact.updatedAt=now;
   }
   s.busy=true;
-  const ok=await saveAdminStateToDatabaseOnly("mise à jour massive","contacts",preview.items.length+" fiches",previous);
+  const ok=await saveAdminStateToDatabaseOnly("mise à jour massive","mise à jour de fiches",preview.items.length+" fiches",previous);
   s.busy=false;s.preview=null;
   if(ok) {s.lastResult=preview.items.length+" fiches mises à jour.";s.error="";showToast(s.lastResult);}
   else {s.error="Enregistrement impossible : la mise à jour a été annulée.";s.lastResult="";}
