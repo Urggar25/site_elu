@@ -64,16 +64,16 @@ function bulkEvaluateExcel(rows, mapping, mode, scopeContacts) {
     if(!index.has(key))index.set(key,[]);
     if(!index.get(key).some(c=>c.id===contact.id))index.get(key).push(contact);
   }));
-  const items=[],usedIds=new Set(),errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0};
+  const items=[],rejected=[],usedIds=new Set(),errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0};
   rows.forEach((row,i)=>{
     if(!row.some(v=>String(v??"").trim()))return;
     const key=bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode);
-    if(!key){errors.invalid++;return;}
+    if(!key){errors.invalid++;rejected.push({row:i+2,reason:"Identité incomplète"});return;}
     const matches=index.get(key)||[];
-    if(!matches.length){errors.unmatched++;return;}
-    if(matches.length!==1){errors.ambiguous++;return;}
+    if(!matches.length){errors.unmatched++;rejected.push({row:i+2,reason:"Aucune fiche correspondante"});return;}
+    if(matches.length!==1){errors.ambiguous++;rejected.push({row:i+2,reason:"Plusieurs fiches correspondent"});return;}
     const contact=matches[0];
-    if(usedIds.has(contact.id)){errors.duplicate++;const previous=items.findIndex(item=>item.id===contact.id);if(previous>=0){items.splice(previous,1);errors.duplicate++;}return;}
+    if(usedIds.has(contact.id)){errors.duplicate++;rejected.push({row:i+2,reason:"Contact présent plusieurs fois dans le fichier"});const previous=items.findIndex(item=>item.id===contact.id);if(previous>=0){const earlier=items[previous];items.splice(previous,1);rejected.push({row:earlier.row,reason:"Contact présent plusieurs fois dans le fichier"});errors.duplicate++;}return;}
     usedIds.add(contact.id);
     const changes={};
     for(const [col,field] of updates){
@@ -88,7 +88,7 @@ function bulkEvaluateExcel(rows, mapping, mode, scopeContacts) {
     if(Object.keys(changes).length)items.push({id:contact.id,name:contactDisplayName(contact),row:i+2,changes});
     else errors.unchanged++;
   });
-  return {items,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
+  return {items,errors,rejected,sourceRows:rows.length,scopeCount:scopeContacts.length};
 }
 function bulkApplyTags(contacts,add,remove) {
   const addIds=new Set(add.map(v=>bulkNormalize(v))),removeIds=new Set(remove.map(v=>bulkNormalize(v)));
@@ -190,7 +190,8 @@ function bulkTagPanel() {
 function bulkPreviewHtml(preview) {
   const state=bulkContactUpdate, stats=preview.errors;
   const details=stats?'<p class="bulk-contact-warning">Sans correspondance : '+stats.unmatched+' · Ambiguës : '+stats.ambiguous+' · Doublons Excel : '+stats.duplicate+' · Inchangées : '+stats.unchanged+' · Incomplètes / valeurs invalides : '+stats.invalid+'</p>':"";
-  return '<section class="bulk-contact-card bulk-contact-preview"><h4>3. Vérification avant enregistrement</h4><p><strong>'+preview.items.length+' fiche(s) à modifier</strong> sur '+preview.scopeCount+' fiche(s) éligibles.</p>'+details+
+  const rejects=preview.rejected?.length?'<details><summary>Voir les lignes ignorées ('+preview.rejected.length+')</summary><ul>'+preview.rejected.slice(0,30).map(item=>'<li>Ligne '+item.row+' — '+bulkEscape(item.reason)+'</li>').join("")+'</ul>'+(preview.rejected.length>30?'<small>30 premières lignes affichées</small>':"")+'</details>':"";
+  return '<section class="bulk-contact-card bulk-contact-preview"><h4>3. Vérification avant enregistrement</h4><p><strong>'+preview.items.length+' fiche(s) à modifier</strong> sur '+preview.scopeCount+' fiche(s) éligibles.</p>'+details+rejects+
     (preview.items.length?'<div class="bulk-contact-preview-table"><table><thead><tr><th>Fiche</th><th>Modifications</th></tr></thead><tbody>'+preview.items.slice(0,25).map(item=>'<tr><td>'+bulkEscape(item.name)+'</td><td>'+Object.entries(item.changes).map(([id,value])=>'<strong>'+bulkEscape(id)+'</strong> : '+bulkEscape(Array.isArray(value)?value.join(", "):value)).join(" · ")+'</td></tr>').join("")+'</tbody></table></div><p>Aperçu des 25 premières fiches. Les cellules vides ne suppriment jamais les valeurs existantes.</p><button type="button" class="primary-action" data-bulk-commit '+(state.busy?"disabled":"")+'>'+ (state.busy?"Enregistrement…":"Confirmer la mise à jour des "+preview.items.length+" fiches")+'</button>':"<p>Aucune modification à enregistrer.</p>")+'</section>';
 }
 function renderBulkContactUpdates() {
@@ -271,7 +272,7 @@ if(typeof document!=="undefined"){
       s.error="";s.preview=null;
       const root=t.closest(".bulk-contact-workspace");
       const newLabels=String(root.querySelector("[data-bulk-tag-new]")?.value||"").split(/[,;]/).map(x=>x.trim()).filter(Boolean);
-      if(newLabels.some(label=>label.length>80)){s.error="Un mot-clé dépasse 80 caractères.";renderAdmin();return;}
+      if(newLabels.some(label=>label.length>80)||newLabels.length>20){s.error="Maximum 20 nouveaux mots-clés de 80 caractères chacun.";renderAdmin();return;}
       const add=[...new Set([...bulkSelectedTags(root,"bulkAdd"),...newLabels])],remove=bulkSelectedTags(root,"bulkRemove");
       s.tagNew=String(root.querySelector("[data-bulk-tag-new]")?.value||"");
       if(!add.length&&!remove.length){s.error="Choisissez des mots-clés à ajouter ou à retirer.";renderAdmin();return;}
