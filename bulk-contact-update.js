@@ -183,7 +183,7 @@ function bulkExcelPanel() {
 function bulkTagPanel() {
   const choices=contactKeywordChoices(),state=bulkContactUpdate;
   return '<section class="bulk-contact-card"><h4>Ajouter et retirer des mots-clés</h4><p>Sélectionnez un ou plusieurs mots-clés existants ; seules les fiches du périmètre choisi seront concernées. Le mot-clé « décès » reste exclusif.</p>'+
-    '<div class="bulk-contact-tag-grids"><fieldset><legend>À ajouter</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkAdd" value="'+attr(w.label)+'" '+((state.tagAdd||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset><fieldset><legend>À retirer</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkRemove" value="'+attr(w.label)+'" '+((state.tagRemove||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset></div>'+
+    '<label>Créer et ajouter un ou plusieurs nouveaux mots-clés (séparés par une virgule)<input data-bulk-tag-new type="text" maxlength="500" value="'+attr(state.tagNew||'')+'" placeholder="Ex. bénévole, association locale" /></label><div class="bulk-contact-tag-grids"><fieldset><legend>À ajouter</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkAdd" value="'+attr(w.label)+'" '+((state.tagAdd||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset><fieldset><legend>À retirer</legend>'+choices.map(w=>'<label><input type="checkbox" name="bulkRemove" value="'+attr(w.label)+'" '+((state.tagRemove||[]).includes(w.label)?"checked":"")+'> '+bulkEscape(w.label)+'</label>').join("")+'</fieldset></div>'+
     '<button type="button" class="primary-action" data-bulk-tag-preview>Prévisualiser les changements</button></section>'+
     (state.preview&&state.mode==="tags"?bulkPreviewHtml(state.preview):"");
 }
@@ -222,6 +222,7 @@ async function bulkCommit() {
     if(item.changes.keywords) {
       contact.tags=[...contact.keywords];
       synchronizeDeathKeyword(contact);
+      registerContactKeywords(contact);
     }
     contact.updatedAt=now;
   }
@@ -248,6 +249,7 @@ if(typeof document!=="undefined"){
     if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-scope]")){bulkContactUpdate.scope=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-tag-new]")){bulkContactUpdate.tagNew=t.value;bulkContactUpdate.preview=null;return;}
     if(t.matches('input[name="bulkAdd"],input[name="bulkRemove"]')){bulkContactUpdate.preview=null;const pane=t.closest(".bulk-contact-workspace");bulkContactUpdate.tagAdd=bulkSelectedTags(pane,"bulkAdd");bulkContactUpdate.tagRemove=bulkSelectedTags(pane,"bulkRemove");renderAdmin();}
   });
   document.addEventListener("click",async event=>{
@@ -266,7 +268,10 @@ if(typeof document!=="undefined"){
     if(t.closest("[data-bulk-tag-preview]")){
       s.error="";s.preview=null;
       const root=t.closest(".bulk-contact-workspace");
-      const add=bulkSelectedTags(root,"bulkAdd"),remove=bulkSelectedTags(root,"bulkRemove");
+      const newLabels=String(root.querySelector("[data-bulk-tag-new]")?.value||"").split(/[,;]/).map(x=>x.trim()).filter(Boolean);
+      if(newLabels.some(label=>label.length>80)){s.error="Un mot-clé dépasse 80 caractères.";renderAdmin();return;}
+      const add=[...new Set([...bulkSelectedTags(root,"bulkAdd"),...newLabels])],remove=bulkSelectedTags(root,"bulkRemove");
+      s.tagNew=String(root.querySelector("[data-bulk-tag-new]")?.value||"");
       if(!add.length&&!remove.length){s.error="Choisissez des mots-clés à ajouter ou à retirer.";renderAdmin();return;}
       if(add.some(v=>remove.some(w=>bulkNormalize(v)===bulkNormalize(w)))){s.error="Un mot-clé ne peut pas être ajouté et retiré simultanément.";renderAdmin();return;}
       const contacts=bulkScopeContacts(s.scope,s.listId);
