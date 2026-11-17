@@ -1506,6 +1506,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("evenement majeur campagne")) return ["campaignEvents", "calendarEvents"];
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
   if (normalized.includes("migration institution")) return ["localContacts", "institutions"];
+  if (normalized.includes("mise a jour de fiches")) return ["localContacts", "institutions", "savedContactSearches", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents", "contactKeywords"];
   if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
@@ -4961,7 +4962,7 @@ function renderContacts() {
     <section class="contact-search-panel">
       <header class="contact-search-head">
         <div><h2>Contacts</h2><p>${contacts.length} résultat(s) sur ${adminState.localContacts.filter((item) => item.entityType !== "institution").length} personne(s)</p></div>
-        <div class="contact-search-head-actions"><button class="secondary-action compact contact-create-shortcut" type="button" data-contact-create-shortcut aria-label="Créer un nouveau contact">+ Nouveau contact</button><button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button></div>
+        <div class="contact-search-head-actions"><button class="secondary-action compact contact-create-shortcut" type="button" data-contact-create-shortcut aria-label="Créer un nouveau contact">+ Nouveau contact</button><button class="secondary-action compact" type="button" data-admin-section="contact-io">Import / export</button><button class="secondary-action compact" type="button" data-bulk-shortcut>Mise à jour de fiches</button></div>
       </header>
       <form class="contact-search-primary-actions" data-admin-filter="contacts">
         <div class="contact-universal-search"><label for="contact-query-input">Recherche dans tous les champs</label><div class="contact-universal-input"><input id="contact-query-input" name="q" type="search" autocomplete="off" value="${attr(filters.q||"")}" placeholder="Nom, prénom, organisation, téléphone, mot-clé…"/><button class="primary-action" type="submit">Rechercher</button></div></div>
@@ -5033,19 +5034,20 @@ function updateContactDeletionProgressDom() {
 
 let contactIoTab = "import";
 function renderContactImportExport() {
-  const tab = ["import", "export", "create"].includes(contactIoTab) ? contactIoTab : "import";
+  const tab = ["import", "export", "create", "update"].includes(contactIoTab) ? contactIoTab : "import";
   const count = (adminState.localContacts || []).filter(c => c.entityType !== "institution").length;
   const createFields = contactFields().filter(field => field.id !== "id" && field.id !== "deathDateApprox" && field.id !== "emailCampaignStatus");
   return `<div class="contacts-admin contact-io-page">
     <section class="contact-io-hero">
-      <div><span class="contact-io-eyebrow">Gestion des contacts</span><h2>Importation, exportation et création</h2>
-      <p>Trois espaces indépendants, avec les mêmes champs et mots-clés que vos fiches contacts.</p></div>
+      <div><span class="contact-io-eyebrow">Gestion des contacts</span><h2>Importation, exportation et mise à jour</h2>
+      <p>Quatre espaces indépendants pour créer, exporter ou actualiser des fiches contacts.</p></div>
       <button type="button" class="secondary-action compact" data-admin-section="contacts">← Revenir aux contacts</button>
     </section>
     <nav class="contact-io-tabs" aria-label="Gestion des contacts">
       <button type="button" data-contact-io-tab="import" class="${tab==="import"?"is-active":""}" aria-current="${tab==="import"?"page":"false"}"><span>01</span> Importer</button>
       <button type="button" data-contact-io-tab="export" class="${tab==="export"?"is-active":""}" aria-current="${tab==="export"?"page":"false"}"><span>02</span> Exporter</button>
       <button type="button" data-contact-io-tab="create" class="${tab==="create"?"is-active":""}" aria-current="${tab==="create"?"page":"false"}"><span>03</span> Créer un contact</button>
+      <button type="button" data-contact-io-tab="update" class="${tab==="update"?"is-active":""}" aria-current="${tab==="update"?"page":"false"}"><span>04</span> Mise à jour de fiches</button>
     </nav>
     ${tab==="import" ? `<section class="contact-io-workspace" aria-label="Importation">
       <header class="contact-io-workspace-head"><div><h3>Importer des contacts</h3><p>Ajoutez un fichier CSV ou JSON. Pour les CSV, vérifiez les correspondances avant validation.</p></div><span class="contact-io-stat">${count} contacts actuels</span></header>
@@ -5068,6 +5070,7 @@ function renderContactImportExport() {
       </div>
       <div class="contact-io-export-actions"><p>CSV pour les tableurs · JSON pour conserver la structure des champs.</p><button class="primary-action" type="button" data-contact-export="csv">↓ Télécharger CSV</button><button class="secondary-action" type="button" data-contact-export="json">↓ Télécharger JSON</button></div>
     </section>` : ""}
+    ${tab==="update" ? renderBulkContactUpdates() : ""}
     ${tab==="create" ? `<section class="contact-io-workspace" aria-label="Création de contact">
       <header class="contact-io-workspace-head"><div><h3>Créer une fiche de contact</h3><p>Les champs correspondent exactement aux paramètres « Champs contact ». Les mots-clés sont sélectionnables et créables directement.</p></div></header>
       <form class="contact-create-card contact-create-unified" data-contact-create>
@@ -8907,6 +8910,7 @@ document.addEventListener("change",event=>{
 });
 document.addEventListener("click", async (event) => {
   beginAdminMutationSnapshot();
+  if (event.target.closest("[data-bulk-shortcut]")) { contactIoTab = "update"; activeAdminSection = "contact-io"; renderAdmin(); return; }
   const contactCreateShortcut = event.target.closest("[data-contact-create-shortcut]");
   if (contactCreateShortcut) { contactIoTab = "create"; activeAdminSection = "contact-io"; renderAdmin(); return; }
   const contactIoTabButton = event.target.closest("[data-contact-io-tab]");
