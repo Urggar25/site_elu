@@ -73,7 +73,7 @@ function bulkEvaluateExcel(rows, mapping, mode, scopeContacts) {
     if(!matches.length){errors.unmatched++;return;}
     if(matches.length!==1){errors.ambiguous++;return;}
     const contact=matches[0];
-    if(usedIds.has(contact.id)){errors.duplicate++;return;}
+    if(usedIds.has(contact.id)){errors.duplicate++;const previous=items.findIndex(item=>item.id===contact.id);if(previous>=0){items.splice(previous,1);errors.duplicate++;}return;}
     usedIds.add(contact.id);
     const changes={};
     for(const [col,field] of updates){
@@ -121,7 +121,8 @@ async function bulkReadExcel(file) {
   if(/\.csv$/i.test(file.name)) {
     const rows=parseCsv(await file.text());
     if(rows.length<2)throw new Error("CSV vide ou sans données.");
-    return {headers:rows[0],rows:rows.slice(1,10001),sheet:"CSV"};
+    if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
+    return {headers:rows[0],rows:rows.slice(1),sheet:"CSV"};
   }
   if(!/\.xlsx$/i.test(file.name))throw new Error("Choisissez un fichier .xlsx ou .csv.");
   const entries=await readZipEntries(await file.arrayBuffer());
@@ -149,6 +150,7 @@ async function bulkReadExcel(file) {
     return values;
   }).filter(row=>row.some(v=>String(v??"").trim()));
   if(rows.length<2)throw new Error("La première feuille ne contient pas de données.");
+  if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
   return {headers:rows[0],rows:rows.slice(1),sheet:sheets[0].getAttribute("name")||"Feuille 1"};
 }
 function bulkAutoMapping(headers) {
@@ -235,11 +237,11 @@ if(typeof document!=="undefined"){
       } catch(error) {bulkContactUpdate.error=error.message||"Lecture impossible.";}
       renderAdmin();return;
     }
-    if(t.matches("[data-bulk-column]")){bulkContactUpdate.mapping[Number(t.dataset.bulkColumn)]=t.value;bulkContactUpdate.preview=null;return;}
-    if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;return;}
+    if(t.matches("[data-bulk-column]")){bulkContactUpdate.mapping[Number(t.dataset.bulkColumn)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-scope]")){bulkContactUpdate.scope=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
-    if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;return;}
-    if(t.matches('input[name="bulkAdd"],input[name="bulkRemove"]')){bulkContactUpdate.preview=null;const pane=t.closest(".bulk-contact-workspace");bulkContactUpdate.tagAdd=bulkSelectedTags(pane,"bulkAdd");bulkContactUpdate.tagRemove=bulkSelectedTags(pane,"bulkRemove");}
+    if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches('input[name="bulkAdd"],input[name="bulkRemove"]')){bulkContactUpdate.preview=null;const pane=t.closest(".bulk-contact-workspace");bulkContactUpdate.tagAdd=bulkSelectedTags(pane,"bulkAdd");bulkContactUpdate.tagRemove=bulkSelectedTags(pane,"bulkRemove");renderAdmin();}
   });
   document.addEventListener("click",async event=>{
     const t=event.target,s=bulkContactUpdate;
