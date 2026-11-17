@@ -1506,6 +1506,7 @@ function adminChangeKeysForTarget(target = "") {
   if (normalized.includes("evenement majeur campagne")) return ["campaignEvents", "calendarEvents"];
   if (normalized.includes("recherche contact enregistree")) return ["savedContactSearches"];
   if (normalized.includes("migration institution")) return ["localContacts", "institutions"];
+  if (normalized.includes("mise a jour de fiches")) return ["localContacts", "institutions", "savedContactSearches", "permanenceRequests", "teamTasks", "deathCases", "calendarEvents", "campaignEvents", "contactKeywords"];
   if (normalized.includes("institution")) return ["institutions", "localContacts"];
   if (normalized.includes("modele email")) return ["mailTemplates"];
   if (normalized.includes("trombinoscope")) return ["trombinoscopeCategories", "trombinoscopePeople"];
