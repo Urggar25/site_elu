@@ -2005,14 +2005,14 @@ function contactQuickSearchText(contact = {}) {
   return value;
 }
 
-function searchContacts(query = "", { limit = 25, excludeIds = [] } = {}) {
+function searchContacts(query = "", { limit = 25, excludeIds = [], includeDeceased = false } = {}) {
   const normalizedQuery = normalizeName(query);
   if (normalizedQuery.length < 2) return [];
   const excluded = new Set(excludeIds.filter(Boolean));
   const matches = [];
   const maxCandidates = Math.max(limit * 4, limit);
   for (const contact of adminState.localContacts || []) {
-    if (excluded.has(contact.id)) continue;
+    if (excluded.has(contact.id) || (!includeDeceased && isContactDeceased(contact))) continue;
     if (!contactQuickSearchText(contact).includes(normalizedQuery)) continue;
     matches.push(contact);
     if (matches.length >= maxCandidates) break;
@@ -2029,7 +2029,7 @@ function contactFieldSearchText(contact = {}, field = "") {
   return contactQuickSearchText(contact);
 }
 
-function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [] } = {}) {
+function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [], includeDeceased = true } = {}) {
   const activeFilters = Object.entries(filters)
     .map(([field, value]) => [field, normalizeName(value)])
     .filter(([, value]) => value.length >= 2);
@@ -2038,7 +2038,7 @@ function searchContactsByFields(filters = {}, { limit = 25, excludeIds = [] } = 
   const matches = [];
   const maxCandidates = Math.max(limit * 4, limit);
   for (const contact of adminState.localContacts || []) {
-    if (excluded.has(contact.id)) continue;
+    if (excluded.has(contact.id) || (!includeDeceased && isContactDeceased(contact))) continue;
     if (!activeFilters.every(([field, value]) => contactFieldSearchText(contact, field).includes(value))) continue;
     matches.push(contact);
     if (matches.length >= maxCandidates) break;
