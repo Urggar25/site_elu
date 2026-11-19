@@ -3534,7 +3534,7 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder","includeDeceased"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordExcludeIds:normalizedContactKeywordIds(item.filters?.keywordExcludeIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder","includeDeceased"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordExcludeIds:normalizedContactKeywordIds(item.filters?.keywordExcludeIds).filter(id=>!normalizedContactKeywordIds(item.filters?.keywordIds).includes(id)), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
@@ -7070,7 +7070,7 @@ async function deleteSelectedContactsFast(selectedCount = null) {
     if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot||["manual","hybrid"].includes(current.listType))){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
-    await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
+    await deleteContactsByMatcherWithProgress((contact) => contact.entityType!=="institution" && (filters.includeDeceased||!isContactDeceased(contact)) && contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
     return;
   }
   await deleteContactsWithProgress([...selectedContactIds], "contacts selectionnes");
@@ -9811,7 +9811,13 @@ document.addEventListener("click", async (event) => {
   const deleteSelectedContacts = event.target.closest("[data-delete-selected-contacts]");
   if (deleteSelectedContacts && isAdmin()) {
     const selectedCount = isAllFilteredContactSelectionActive(contactSearchFilters()) ? filteredContacts().length : selectedContactIds.size;
-    if (selectedCount && confirm(`Confirmer la suppression de ${selectedCount} contact(s) ?`)) {
+    if(selectedCount){
+      const message="Supprimer définitivement "+selectedCount+" contact(s) ?\nCette opération supprime également leurs liens dans les événements, listes et dossiers associés.";
+      if(!confirm(message))return;
+      if(selectedCount>=100){
+        const typed=prompt("Suppression massive de "+selectedCount+" contacts. Pour confirmer, saisissez exactement : SUPPRIMER "+selectedCount);
+        if(typed!=="SUPPRIMER "+selectedCount){showToast("Suppression annulée : confirmation incorrecte.");return;}
+      }
       await deleteSelectedContactsFast(selectedCount);
     }
   }
