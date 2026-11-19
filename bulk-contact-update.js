@@ -250,8 +250,8 @@ function renderBulkContactUpdates() {
 }
 async function bulkCommit() {
   const s=bulkContactUpdate,preview=s.preview;
-  if(s.busy||!preview?.items.length)return;
-  if(!confirm("Mettre à jour "+preview.items.length+" fiches ? Cette opération modifie la base de contacts."))return;
+  if(s.busy||!(preview?.items.length||(preview?.creates||[]).length))return;
+  if(!confirm("Modifier "+preview.items.length+" fiches et créer "+(preview.creates||[]).length+" nouveaux contacts ? Cette opération modifie la base."))return;
   const current=new Map(adminState.localContacts.map(contact=>[contact.id,contact]));
   if(preview.items.some(item=>!current.has(item.id))) {s.preview=null;s.error="Des contacts ont changé. Relancez la prévisualisation.";renderAdmin();return;}
   const previous={...cloneAdminState(),localContacts:adminState.localContacts.map(c=>({...c,keywords:[...(c.keywords||[])],tags:Array.isArray(c.tags)?[...c.tags]:c.tags}))};
@@ -275,10 +275,19 @@ async function bulkCommit() {
     }
     contact.updatedAt=now;
   }
+  for(const entry of preview.creates||[]){
+    if(current.has(entry.id)){
+      adminState=normalizeAdminState(previous);
+      s.preview=null;s.error="Une fiche existe déjà avec cet identifiant : relancez la prévisualisation.";renderAdmin();return;
+    }
+    adminState.localContacts.push(entry.contact);
+    current.set(entry.id,entry.contact);
+    registerContactKeywords(entry.contact);
+  }
   s.busy=true;
-  const ok=await saveAdminStateToDatabaseOnly("mise à jour massive","mise à jour de fiches",preview.items.length+" fiches",previous);
+  const ok=await saveAdminStateToDatabaseOnly("mise à jour massive","mise à jour de fiches",(preview.items.length+(preview.creates||[]).length)+" fiches",previous);
   s.busy=false;s.preview=null;
-  if(ok) {s.lastResult=preview.items.length+" fiches mises à jour.";s.error="";showToast(s.lastResult);}
+  if(ok) {s.lastResult=preview.items.length+" fiches mises à jour ; "+(preview.creates||[]).length+" fiches créées.";s.error="";showToast(s.lastResult);}
   else {s.error="Enregistrement impossible : la mise à jour a été annulée.";s.lastResult="";}
   renderAdmin();
 }
