@@ -1,5 +1,5 @@
 /* Mise à jour de fiches — prévisualisation obligatoire, aucune création ni fusion automatique. */
-const bulkContactUpdate = { mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, createMissing: true, columnPolicies: [], busy: false, error: "", lastResult: "" };
+const bulkContactUpdate = { mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, createMissing: true, columnPolicies: [], importTagIds: [], importTagNew: "", busy: false, error: "", lastResult: "" };
 
 function bulkNormalize(value) {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[’']/g," ").replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
@@ -83,7 +83,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
   });
   scopeContacts.forEach(c=>add(index,c));
   allContacts.filter(c=>c.entityType!=="institution").forEach(c=>add(globalIndex,c));
-  const items=[],creates=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
+  const items=[],creates=[],matchedUnchanged=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
   const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
   const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
   const usedIds=new Set(allContacts.map(c=>c.id));
@@ -132,11 +132,67 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
     }else{
       const changes=Object.fromEntries(Object.keys(candidate).filter(id=>JSON.stringify(candidate[id])!==JSON.stringify(original[id])).map(id=>[id,candidate[id]]));
       if(Object.keys(changes).length)items.push({id:original.id,name:contactDisplayName(original),row:line,changes});
-      else errors.unchanged++;
+      else {errors.unchanged++;matchedUnchanged.push({id:original.id,row:line});}
     }
   });
-  return {items,creates,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
+  return {items,creates,matchedUnchanged,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
 }
+function bulkImportKeywordSelection(existing=[],newText="") {
+  const raw=[...(Array.isArray(existing)?existing:[]),...String(newText||"").split(/[,;\n]/)];
+  const normalized=new Map();
+  raw.forEach(value=>{
+    const keyword=String(value||"").trim();
+    const id=bulkNormalize(keyword);
+    if(!id)return;
+    if(keyword.length>80)throw new Error("Un mot-clé dépasse 80 caractères.");
+    if(!normalized.has(id))normalized.set(id,keyword);
+  });
+  if(normalized.size>20)throw new Error("Maximum 20 mots-clés supplémentaires par importation.");
+  return [...normalized.values()];
+}
+function bulkMergeImportKeywords(existing,additional) {
+  const combined=new Map();
+  [...(Array.isArray(existing)?existing:String(existing||"").split(/[,;]/)),...additional].forEach(item=>{
+    const name=String(item||"").trim(),id=bulkNormalize(name);
+    if(id&&!combined.has(id))combined.set(id,name);
+  });
+  // Ne jamais ajouter des mots-clés ordinaires à une fiche décédée, ni mélanger décès et autres mots-clés.
+  if([...combined.values()].some(isDeathKeyword))return ["décès"];
+  return [...combined.values()];
+}
+function bulkApplyImportKeywords(preview,labels) {
+  if(!labels.length)return preview;
+  const items=preview.items.map(item=>({...item,changes:{...item.changes}}));
+  const creates=preview.creates.map(entry=>({...entry,contact:{...entry.contact}}));
+  const index=new Map((adminState.localContacts||[]).map(c=>[c.id,c]));
+  items.forEach(item=>{
+    const existing=index.get(item.id);
+    if(!existing)return;
+    const before=contactKeywordValues(existing);
+    const current=Object.prototype.hasOwnProperty.call(item.changes,"keywords")?item.changes.keywords:before;
+    const updated=bulkMergeImportKeywords(current,labels);
+    if(JSON.stringify(updated)!==JSON.stringify(before)){
+      item.changes.keywords=updated;
+      item.changes.tags=[...updated];
+    }
+  });
+  creates.forEach(entry=>{
+    const result=bulkMergeImportKeywords(entry.contact.keywords,labels);
+    entry.contact.keywords=result;
+    entry.contact.tags=[...result];
+  });
+  // Des lignes préalablement « inchangées » sont à modifier si les mots-clés demandés sont absents.
+  for(const match of preview.matchedUnchanged||[]){
+    const existing=index.get(match.id);
+    if(!existing)continue;
+    const original=contactKeywordValues(existing),keywords=bulkMergeImportKeywords(original,labels);
+    if(JSON.stringify(original)!==JSON.stringify(keywords)){
+      items.push({id:existing.id,name:contactDisplayName(existing),row:match.row,changes:{keywords,tags:[...keywords]}});
+    }
+  }
+  return {...preview,items,creates,importKeywords:labels};
+}
+
 function bulkApplyTags(contacts,add,remove) {
   const addIds=new Set(add.map(v=>bulkNormalize(v))),removeIds=new Set(remove.map(v=>bulkNormalize(v)));
   const items=[];
@@ -227,6 +283,15 @@ function bulkScopeSelector() {
     (bulkContactUpdate.scope==="list"?'<label>Liste <select data-bulk-list>'+bulkOptions([["","Choisir une liste…"],...lists.map(item=>[item.id,item.name])],bulkContactUpdate.listId)+'</select></label>':"")+
     '<small>Ce périmètre limite les fiches recherchées ; les nouvelles fiches sont créées uniquement si elles sont absentes de toute la base.</small></div>';
 }
+function bulkImportKeywordPanel() {
+  const state=bulkContactUpdate,choices=contactKeywordChoices(),chosen=new Set(state.importTagIds||[]);
+  return '<section class="bulk-contact-card bulk-import-keywords"><h4>Mots-clés à appliquer à tous les contacts importés</h4>'+
+    '<p>Ces mots-clés seront ajoutés aux fiches existantes correspondantes et aux fiches nouvellement créées. Les mots-clés déjà présents sont conservés et les doublons évités. Cela n’affecte pas les lignes refusées.</p>'+
+    '<div class="bulk-import-keyword-choices">'+choices.map(item=>'<label><input type="checkbox" data-bulk-import-keyword value="'+attr(item.label)+'" '+(chosen.has(item.label)?"checked":"")+' /> '+bulkEscape(item.label)+'</label>').join("")+'</div>'+
+    '<label>Ajouter de nouveaux mots-clés (séparés par une virgule)<input type="text" data-bulk-import-tag-new maxlength="700" placeholder="Ex. mailing 2027, association, bénévoles" value="'+attr(state.importTagNew||"")+'" /></label>'+
+    '<small>Les mots-clés seront ajoutés même si aucune autre colonne de la fiche ne change. Le mot-clé spécial « décès » conserve sa règle d’exclusivité.</small></section>';
+}
+
 function bulkExcelPanel() {
   const state=bulkContactUpdate;
   const fields=[["","Ignorer cette colonne"],["match_lastName","Clé : Nom"],["match_firstName","Clé : Prénom"],["match_city","Clé : Commune"],["match_birthDate","Clé : Date de naissance"],["address_auto","Adresse complète (numéro et rue)"],...bulkEligibleFields().map(f=>[f.id,"Champ : "+f.label])];
@@ -236,7 +301,7 @@ function bulkExcelPanel() {
   return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV. Le fichier est analysé dans votre navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
     (state.file?'<p><strong>'+bulkEscape(state.file.name)+'</strong> · '+bulkEscape(state.sheet)+' · '+state.rows.length+' ligne(s)</p>':"")+'</div>'+
     (state.headers.length?'<section class="bulk-contact-card"><h4>2. Critère de rapprochement</h4><label>Identification par <select data-bulk-match>'+bulkOptions([["city","Nom + prénom + commune"],["birth","Nom + prénom + date de naissance"]],state.matchMode)+'</select></label><p>Les correspondances ambiguës et les doublons sont ignorés.</p><label class="check-line"><input type="checkbox" data-bulk-create '+(state.createMissing?"checked":"")+' /> Créer les fiches sans correspondance et renseigner leurs colonnes</label></section>':"")+
-    map+(state.headers.length?'<button type="button" class="primary-action" data-bulk-preview>Prévisualiser les changements</button>':"")+preview;
+    (state.headers.length?bulkImportKeywordPanel():"")+map+(state.headers.length?'<button type="button" class="primary-action" data-bulk-preview>Prévisualiser les changements</button>':"")+preview;
 }
 function bulkTagPanel() {
   const choices=contactKeywordChoices(),state=bulkContactUpdate;
@@ -252,7 +317,7 @@ function bulkPreviewHtml(preview) {
   const rejects=preview.rejected?.length?'<details><summary>Voir les lignes ignorées ('+preview.rejected.length+')</summary><ul>'+preview.rejected.slice(0,30).map(item=>'<li>Ligne '+item.row+' — '+bulkEscape(item.reason)+'</li>').join("")+'</ul></details>':"";
   const updated=preview.items.slice(0,25).map(item=>'<tr><td>'+bulkEscape(item.name)+'</td><td>'+Object.entries(item.changes).map(([key,value])=>'<strong>'+bulkEscape(key)+'</strong> : '+bulkEscape(Array.isArray(value)?value.join(", "):value)).join(" · ")+'</td></tr>').join("");
   const newRows=creates.slice(0,Math.max(0,25-preview.items.length)).map(item=>'<tr><td>'+bulkEscape(item.name)+' <strong>(création)</strong></td><td>'+Object.entries(item.contact).filter(([key])=>!["id","comments","tags","createdAt","updatedAt"].includes(key)).map(([key,value])=>'<strong>'+bulkEscape(key)+'</strong> : '+bulkEscape(Array.isArray(value)?value.join(", "):value)).join(" · ")+'</td></tr>').join("");
-  return '<section class="bulk-contact-card bulk-contact-preview"><h4>3. Vérification avant enregistrement</h4><p><strong>'+preview.items.length+' fiche(s) à modifier</strong> et <strong>'+creates.length+' fiche(s) à créer</strong> parmi '+preview.scopeCount+' contacts recherchés.</p>'+details+rejects+
+  return '<section class="bulk-contact-card bulk-contact-preview"><h4>3. Vérification avant enregistrement</h4><p><strong>'+preview.items.length+' fiche(s) à modifier</strong> et <strong>'+creates.length+' fiche(s) à créer</strong> parmi '+preview.scopeCount+' contacts recherchés.</p>'+(preview.importKeywords?.length?'<p><strong>Mots-clés ajoutés : </strong>'+bulkEscape(preview.importKeywords.join(', '))+'</p>':'')+details+rejects+
     (total?'<div class="bulk-contact-preview-table"><table><thead><tr><th>Contact</th><th>Données prévues</th></tr></thead><tbody>'+updated+newRows+'</tbody></table></div><p>Aperçu des 25 premiers contacts. Les cellules vides ne suppriment aucune donnée.</p><button type="button" class="primary-action" data-bulk-commit '+(state.busy?"disabled":"")+'>'+(state.busy?"Enregistrement…":"Confirmer "+preview.items.length+" modification(s) et "+creates.length+" création(s)")+'</button>':"<p>Aucune modification à enregistrer.</p>")+'</section>';
 }
 function renderBulkContactUpdates() {
@@ -321,6 +386,8 @@ if(typeof document!=="undefined"){
     if(t.matches("[data-bulk-column]")){bulkContactUpdate.mapping[Number(t.dataset.bulkColumn)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-policy]")){bulkContactUpdate.columnPolicies[Number(t.dataset.bulkPolicy)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-create]")){bulkContactUpdate.createMissing=t.checked;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-import-keyword]")){bulkContactUpdate.importTagIds=[...document.querySelectorAll("[data-bulk-import-keyword]:checked")].map(el=>el.value);bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-import-tag-new]")){bulkContactUpdate.importTagNew=t.value;bulkContactUpdate.preview=null;return;}
     if(t.matches("[data-bulk-match]")){
       const former=bulkContactUpdate.matchMode==="birth"?"birthDate":"city";
       const chosen=t.value==="birth"?"birthDate":"city";
@@ -341,7 +408,9 @@ if(typeof document!=="undefined"){
         if(!s.rows.length)throw new Error("Chargez un fichier d'abord.");
         const contacts=bulkScopeContacts(s.scope,s.listId);
         if(!contacts.length&&!s.createMissing)throw new Error("Le périmètre choisi ne contient aucun contact.");
-        s.preview=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,policies:s.columnPolicies,allContacts:adminState.localContacts});
+        const labels=bulkImportKeywordSelection(s.importTagIds,s.importTagNew);
+        const candidate=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,policies:s.columnPolicies,allContacts:adminState.localContacts});
+        s.preview=bulkApplyImportKeywords(candidate,labels);
       }catch(error){s.error=error.message;}
       renderAdmin();return;
     }
