@@ -2,7 +2,7 @@
 const encodingRepairState={
   issues:[],scanned:0,scanning:false,scanTotal:0,query:"",mode:"all",page:0,
   selections:new Set(),overrides:new Map(),backupDone:false,backupSignature:"",
-  busy:false,error:"",message:"",lastVerified:0
+  busy:false,error:"",message:"",lastVerified:0,view:"groups",groups:[],groupSelections:new Set(),groupOverrides:new Map()
 };
 const repairDeniedFields=new Set(["id","keywords","tags","email","mobile","phone","telephone","birthDate","createdAt","updatedAt","gender","deathDateApprox","institutionId","contactId","externalId"]);
 const repairMojibakePattern=/(?:Ã.|Â[\u0080-\u00BF]|â[€œ„]|�)/u;
@@ -31,23 +31,87 @@ function repairMojibake(input){
   if(result===input||result.includes("�")||repairMojibakeSimple.test(result))return "";
   return result;
 }
+
+function repairCandidateKey(value){
+  return String(value||"").normalize("NFC").toLocaleLowerCase("fr");
+}
+function repairGroupKey(field,value){return JSON.stringify([field,value]);}
+function repairBuildGroups(issues){
+  const groups=new Map();
+  for(const issue of issues){
+    const key=repairGroupKey(issue.field,issue.value);
+    let group=groups.get(key);
+    if(!group){
+      group={key,field:issue.field,value:issue.value,suggestion:issue.suggestion,confidence:issue.confidence,issues:[],samples:[]};
+      groups.set(key,group);
+    }
+    group.issues.push(issue);
+    if(group.samples.length<3)group.samples.push(issue.name);
+  }
+  return [...groups.values()].sort((a,b)=>b.issues.length-a.issues.length||a.field.localeCompare(b.field));
+}
+function repairGroupValue(group){
+  return encodingRepairState.groupOverrides.get(group.key)??group.suggestion;
+}
+function repairGroupValid(group){
+  const next=repairGroupValue(group);
+  return typeof next==="string"&&next.trim()&&next!==group.value&&!next.includes("�")&&!repairMojibakeSimple.test(next);
+}
+function repairGroupList(){
+  const s=encodingRepairState,q=s.query.trim().toLocaleLowerCase("fr");
+  return s.groups.filter(group=>{
+    if(s.mode==="selected"&&!s.groupSelections.has(group.key))return false;
+    if(s.mode==="automatic"&&group.confidence!=="automatic")return false;
+    if(s.mode==="manual"&&group.confidence==="automatic")return false;
+    return !q||[group.field,group.value,group.suggestion,...group.samples].some(v=>String(v||"").toLocaleLowerCase("fr").includes(q));
+  });
+}
+function repairSelectedStats(){
+  const s=encodingRepairState;
+  if(s.view==="groups"){
+    let selected=0,valid=0;
+    for(const group of s.groups)if(s.groupSelections.has(group.key)){
+      selected+=group.issues.length;
+      if(repairGroupValid(group))valid+=group.issues.length;
+    }
+    return {selected,valid};
+  }
+  const selected=s.selections.size;
+  let valid=0;
+  for(const issue of s.issues)if(s.selections.has(issue.key)){
+    const next=repairIssueValue(issue);
+    if(next&&next!==issue.value&&!next.includes("�")&&!repairMojibakeSimple.test(next))valid++;
+  }
+  return {selected,valid};
+}
+
 function repairSafeFields(){
   const fromFields=contactFields().filter(f=>!repairDeniedFields.has(f.id)&&f.type!=="number"&&f.type!=="date"&&f.type!=="boolean"&&f.type!=="multilist"&&f.type!=="list").map(f=>f.id);
   return [...new Set([...fromFields,"firstName","lastName","usageName","birthName","city","streetName","streetNameFull","profession","function"].filter(id=>!repairDeniedFields.has(id)))];
 }
 function repairMaskKey(input) {return String(input).normalize("NFC").toLocaleLowerCase("fr").replace(/[�]/g,"?");}
 function repairSuggestion(value,cleanValues){
-  // Un seul candidat non corrompu avec même structure et mêmes lettres connues.
   if(!value.includes("�"))return "";
-  const key=repairMaskKey(value),matches=[];
-  for(const good of (cleanValues?.get(value.length)||[])){
-    if(good.length!==value.length||good===value)continue;
+  const key=repairCandidateKey(value),len=value.length;
+  const matching=new Map();
+  for(const good of cleanValues?.get(len)||[]){
+    if(good.length!==len||good===value)continue;
+    const goodKey=repairCandidateKey(good);
     let ok=true;
-    const goodKey=repairMaskKey(good);
-    for(let i=0;i<key.length;i++)if(key[i]!=="?"&&key[i]!==goodKey[i]){ok=false;break;}
-    if(ok){matches.push(good);if(matches.length>1)break;}
+    for(let i=0;i<len;i++){
+      if(key[i]!=="�"&&key[i]!==goodKey[i]){ok=false;break;}
+    }
+    if(ok){
+      // Upper/lowercase variants of the same French place do not count as ambiguity.
+      const normalized=goodKey.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      if(!matching.has(normalized))matching.set(normalized,good);
+      if(matching.size>1)return "";
+    }
   }
-  return matches.length===1?matches[0]:"";
+  if(matching.size!==1)return "";
+  const correct=[...matching.values()][0];
+  // Keep uppercase source layout when entirely uppercase.
+  return value===value.toLocaleUpperCase("fr")?correct.toLocaleUpperCase("fr"):correct;
 }
 function repairFieldValues(contacts,fields){
   const byField=new Map(fields.map(id=>[id,new Map()]));
@@ -80,9 +144,9 @@ async function repairScanContacts(){
   const state=encodingRepairState;
   if(state.scanning||state.busy)return;
   state.scanning=true;state.error="";state.message="";state.backupDone=false;state.backupSignature="";
-  state.issues=[];state.selections.clear();state.overrides.clear();state.page=0;
+  state.issues=[];state.selections.clear();state.overrides.clear();state.groupSelections.clear();state.groupOverrides.clear();state.groups=[];state.page=0;
   const contacts=adminState.localContacts.filter(c=>c.entityType!=="institution");
-  const fields=repairSafeFields(),dictionary=repairFieldValues(contacts,fields);
+  const fields=repairSafeFields(),dictionary=repairFieldValues(contacts,fields),suggestionCache=new Map();
   state.scanTotal=contacts.length;state.scanned=0;
   renderAdmin();
   try{
@@ -91,9 +155,10 @@ async function repairScanContacts(){
       for(const field of fields){
         const value=contact[field];
         if(typeof value!=="string"||!repairMojibakePattern.test(value))continue;
-        const fixed=repairMojibake(value);
-        const suggestion=fixed||repairSuggestion(value,dictionary.get(field)||[]);
-        const confidence=fixed?"automatic":suggestion?"review":"unresolved";
+        const cacheKey=repairGroupKey(field,value);
+        let cached=suggestionCache.get(cacheKey);
+        if(!cached){const fixed=repairMojibake(value);const suggestion=fixed||repairSuggestion(value,dictionary.get(field));cached={suggestion,confidence:fixed?"automatic":suggestion?"review":"unresolved"};suggestionCache.set(cacheKey,cached);}
+        const {suggestion,confidence}=cached;
         const issue={key:repairIssueKey(contact.id,field),id:contact.id,field,
           name:contactDisplayName(contact),value,suggestion,confidence,
           type:value.includes("�")?"Caractère de remplacement":"Mauvais décodage UTF-8"};
@@ -107,7 +172,9 @@ async function repairScanContacts(){
         await new Promise(done=>setTimeout(done,0));
       }
     }
-    state.message=state.issues.length+" champ(s) suspects détecté(s). Seuls les décodages réversibles sont présélectionnés.";
+    state.groups=repairBuildGroups(state.issues);
+    for(const group of state.groups)if(group.confidence==="automatic")state.groupSelections.add(group.key);
+    state.message=state.issues.length+" champ(s) suspects répartis en "+state.groups.length+" groupes : une seule correction peut s’appliquer à toutes les occurrences identiques.";
   }catch(error){state.error=error.message||"Analyse impossible.";}
   finally{state.scanning=false;renderAdmin();}
 }
