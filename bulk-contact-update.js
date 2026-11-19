@@ -73,7 +73,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
   const keys=bulkColumns([],mode,mapping),fields=new Map(bulkEligibleFields().map(f=>[f.id,f]));
   const policies=bulkColumnPolicies(mapping,options.policies||[]);
   const updates=mapping.map((id,i)=>(id==="address_auto"||fields.has(id))&&policies[i]!=="ignore"?{col:i,id,policy:policies[i]}:null).filter(Boolean);
-  if(!updates.length&&!options.createMissing)throw new Error("Associez au moins une colonne à renseigner avec une action active.");
+  if(!updates.length&&!options.createMissing&&!options.allowKeywords)throw new Error("Associez au moins une colonne à renseigner ou choisissez des mots-clés à appliquer.");
   if(new Set(updates.map(item=>item.id)).size!==updates.length)throw new Error("Un même champ est associé à plusieurs colonnes.");
   if(updates.some(item=>item.id==="address_auto")&&updates.some(item=>["streetNumber","streetName","streetNameFull"].includes(item.id)))throw new Error("Ne combinez pas l'adresse complète et ses colonnes séparées.");
   const allContacts=options.allContacts||scopeContacts,index=new Map(),globalIndex=new Map();
@@ -409,7 +409,7 @@ if(typeof document!=="undefined"){
         const contacts=bulkScopeContacts(s.scope,s.listId);
         if(!contacts.length&&!s.createMissing)throw new Error("Le périmètre choisi ne contient aucun contact.");
         const labels=bulkImportKeywordSelection(s.importTagIds,s.importTagNew);
-        const candidate=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,policies:s.columnPolicies,allContacts:adminState.localContacts});
+        const candidate=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,allowKeywords:labels.length>0,policies:s.columnPolicies,allContacts:adminState.localContacts});
         s.preview=bulkApplyImportKeywords(candidate,labels);
       }catch(error){s.error=error.message;}
       renderAdmin();return;
