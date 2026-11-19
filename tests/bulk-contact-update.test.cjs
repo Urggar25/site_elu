@@ -5,6 +5,7 @@ const vm = require("node:vm");
 const path = require("node:path");
 const src = fs.readFileSync(path.join(__dirname,"../bulk-contact-update.js"),"utf8");
 const fields=[
+  {id:"firstName",label:"Prénom",type:"text"},
   {id:"phone",label:"Téléphone",type:"text"},
   {id:"email",label:"Mail",type:"text"},
   {id:"city",label:"Commune",type:"text"},
