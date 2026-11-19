@@ -761,32 +761,35 @@ function delete_admin_contacts_by_ids(array $submittedIds, array $user): array
         }
         $state['localContacts'] = $remaining;
         unset($remaining);
-        foreach (($state['institutions'] ?? []) as &$item) {
+        foreach (['institutions', 'permanenceRequests', 'teamTasks', 'calendarEvents', 'campaignEvents', 'savedContactSearches', 'deathCases'] as $collection) {
+            if (!is_array($state[$collection] ?? null)) $state[$collection] = [];
+        }
+        foreach ($state['institutions'] as &$item) {
             if (isset($ids[$item['mayorContactId'] ?? ''])) $item['mayorContactId'] = '';
             if (isset($ids[$item['legacyContactId'] ?? ''])) $item['legacyContactId'] = '';
             $item['deputyContactIds'] = array_values(array_filter($item['deputyContactIds'] ?? [], static fn($id) => !isset($ids[$id])));
         }
         unset($item);
-        foreach (($state['permanenceRequests'] ?? []) as &$item) {
+        foreach ($state['permanenceRequests'] as &$item) {
             if (isset($ids[$item['contactId'] ?? ''])) $item['contactId'] = '';
         }
         unset($item);
-        foreach (($state['teamTasks'] ?? []) as &$item) {
+        foreach ($state['teamTasks'] as &$item) {
             if (isset($ids[$item['linkedContactId'] ?? ''])) $item['linkedContactId'] = '';
         }
         unset($item);
-        foreach (($state['calendarEvents'] ?? []) as &$item) {
+        foreach ($state['calendarEvents'] as &$item) {
             $item['contactIds'] = array_values(array_filter($item['contactIds'] ?? [], static fn($id) => !isset($ids[$id])));
             foreach (($item['attendanceByDate'] ?? []) as $day => $rows) {
                 $item['attendanceByDate'][$day] = array_values(array_filter(is_array($rows) ? $rows : [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
             }
         }
         unset($item);
-        foreach (($state['campaignEvents'] ?? []) as &$item) {
+        foreach ($state['campaignEvents'] as &$item) {
             $item['participants'] = array_values(array_filter($item['participants'] ?? [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
         }
         unset($item);
-        foreach (($state['savedContactSearches'] ?? []) as &$item) {
+        foreach ($state['savedContactSearches'] as &$item) {
             foreach (['includeIds', 'excludeIds', 'snapshotIds'] as $field) {
                 if (is_array($item[$field] ?? null)) {
                     $item[$field] = array_values(array_filter($item[$field], static fn($id) => !isset($ids[$id])));
@@ -794,7 +797,7 @@ function delete_admin_contacts_by_ids(array $submittedIds, array $user): array
             }
         }
         unset($item);
-        foreach (($state['deathCases'] ?? []) as &$item) {
+        foreach ($state['deathCases'] as &$item) {
             if (isset($ids[$item['deceasedId'] ?? ''])) $item['deceasedId'] = '';
             $item['relatives'] = array_values(array_filter($item['relatives'] ?? [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
         }
