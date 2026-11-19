@@ -96,6 +96,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
   const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
   const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
   const usedIds=new Set(allContacts.map(c=>c.id));
+  const usedMatchedIds=new Set();
   rows.forEach((row,i)=>{
     if(!row.some(v=>String(v??"").trim()))return;
     const key=rowKeys[i],line=i+2;
@@ -111,6 +112,8 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
     if(!matches.length&&(globalIndex.get(key)||[]).length){reject("Fiche existante hors du périmètre choisi","outsideScope");return;}
     const creating=!matches.length;
     const chosen=matches.length>1?matches.find(c=>c.id===selectedId):matches[0];
+    if(!creating&&usedMatchedIds.has(chosen.id)){reject("Fiche déjà associée à une autre ligne Excel","duplicate");return;}
+    if(!creating)usedMatchedIds.add(chosen.id);
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");return;}
     const original=creating?{
       id:"",firstName:bulkFirstGivenName(row[keys.firstName]),lastName:String(row[keys.lastName]??"").trim(),
@@ -182,6 +185,7 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
   const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
   const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
   const usedIds=new Set(allContacts.map(c=>c.id));
+  const usedMatchedIds=new Set();
   for(let i=0;i<rows.length;i++){
     if(i%350===0)await bulkPreviewYield("Analyse des lignes : "+i+" / "+rows.length);
     const row=rows[i];
@@ -199,6 +203,8 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
     if(!matches.length&&(globalIndex.get(key)||[]).length){reject("Fiche existante hors du périmètre choisi","outsideScope");continue;}
     const creating=!matches.length;
     const chosen=matches.length>1?matches.find(c=>c.id===selectedId):matches[0];
+    if(!creating&&usedMatchedIds.has(chosen.id)){reject("Fiche déjà associée à une autre ligne Excel","duplicate");continue;}
+    if(!creating)usedMatchedIds.add(chosen.id);
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");continue;}
     const original=creating?{
       id:"",firstName:bulkFirstGivenName(row[keys.firstName]),lastName:String(row[keys.lastName]??"").trim(),
