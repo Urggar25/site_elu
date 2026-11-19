@@ -128,7 +128,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
         bulkApplyValue(candidate,"streetNameFull",address.street,update.policy);
         continue;
       }
-      if(update.id==="streetName"&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
+      if(["streetName","streetNameFull"].includes(update.id)&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
       const field=fields.get(update.id);
       const value=field.id==="firstName"?bulkFirstGivenName(raw):field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
       if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
@@ -185,7 +185,7 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
   for(let i=0;i<rows.length;i++){
     if(i%350===0)await bulkPreviewYield("Analyse des lignes : "+i+" / "+rows.length);
     const row=rows[i];
-    if(!row.some(v=>String(v??"").trim()))return;
+    if(!row.some(v=>String(v??"").trim()))continue;
     const key=rowKeys[i],line=i+2;
     const reject=(reason,type)=>{errors[type]++;rejected.push({row:line,reason});};
     if(!key){reject("Identité incomplète","invalid");continue;}
@@ -201,7 +201,7 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
     const chosen=matches.length>1?matches.find(c=>c.id===selectedId):matches[0];
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");continue;}
     const original=creating?{
-      id:"",firstName:String(row[keys.firstName]??"").trim(),lastName:String(row[keys.lastName]??"").trim(),
+      id:"",firstName:bulkFirstGivenName(row[keys.firstName]),lastName:String(row[keys.lastName]??"").trim(),
       [mode==="birth"?"birthDate":"city"]:mode==="birth"?bulkDate(row[keys.birthDate]):String(row[keys.city]??"").trim(),
       keywords:[],tags:[],comments:[]
     }:chosen;
@@ -216,9 +216,9 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
         bulkApplyValue(candidate,"streetNameFull",address.street,update.policy);
         continue;
       }
-      if(update.id==="streetName"&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
+      if(["streetName","streetNameFull"].includes(update.id)&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
       const field=fields.get(update.id);
-      const value=field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
+      const value=field.id==="firstName"?bulkFirstGivenName(raw):field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
       if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
       bulkApplyValue(candidate,field.id,value,update.policy);
     }
