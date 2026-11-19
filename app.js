@@ -5028,13 +5028,13 @@ function updateContactDeletionProgressDom() {
 }
 let contactIoTab = "import";
 function renderContactImportExport() {
-  const tab = ["import", "export", "create", "update"].includes(contactIoTab) ? contactIoTab : "import";
+  const tab = ["import", "export", "create", "update", "repair"].includes(contactIoTab) ? contactIoTab : "import";
   const count = (adminState.localContacts || []).filter(c => c.entityType !== "institution").length;
   const createFields = contactFields().filter(field => field.id !== "id" && field.id !== "deathDateApprox" && field.id !== "emailCampaignStatus");
   return `<div class="contacts-admin contact-io-page">
     <section class="contact-io-hero">
       <div><span class="contact-io-eyebrow">Gestion des contacts</span><h2>Importation, exportation et mise à jour</h2>
-      <p>Quatre espaces indépendants pour créer, exporter ou actualiser des fiches contacts.</p></div>
+      <p>Importer, exporter, actualiser et réparer les données des fiches contacts.</p></div>
       <button type="button" class="secondary-action compact" data-admin-section="contacts">← Revenir aux contacts</button>
     </section>
     <nav class="contact-io-tabs" aria-label="Gestion des contacts">
@@ -5042,6 +5042,7 @@ function renderContactImportExport() {
       <button type="button" data-contact-io-tab="export" class="${tab==="export"?"is-active":""}" aria-current="${tab==="export"?"page":"false"}"><span>02</span> Exporter</button>
       <button type="button" data-contact-io-tab="create" class="${tab==="create"?"is-active":""}" aria-current="${tab==="create"?"page":"false"}"><span>03</span> Créer un contact</button>
       <button type="button" data-contact-io-tab="update" class="${tab==="update"?"is-active":""}" aria-current="${tab==="update"?"page":"false"}"><span>04</span> Mise à jour de fiches</button>
+      ${isAdmin()?`<button type="button" data-contact-io-tab="repair" class="${tab==="repair"?"is-active":""}" aria-current="${tab==="repair"?"page":"false"}"><span>05</span> Réparer l’encodage</button>`:""}
     </nav>
     ${tab==="import" ? `<section class="contact-io-workspace" aria-label="Importation">
       <header class="contact-io-workspace-head"><div><h3>Importer des contacts</h3><p>Ajoutez un fichier CSV ou JSON. Pour les CSV, vérifiez les correspondances avant validation.</p></div><span class="contact-io-stat">${count} contacts actuels</span></header>
@@ -5065,6 +5066,7 @@ function renderContactImportExport() {
       <div class="contact-io-export-actions"><p>CSV pour les tableurs · JSON pour conserver la structure des champs.</p><button class="primary-action" type="button" data-contact-export="csv">↓ Télécharger CSV</button><button class="secondary-action" type="button" data-contact-export="json">↓ Télécharger JSON</button></div>
     </section>` : ""}
     ${tab==="update" ? renderBulkContactUpdates() : ""}
+    ${tab==="repair" ? window.renderEncodingRepair?.() || '<section class="contact-io-workspace"><h3>Outil de réparation indisponible. Rechargez la page.</h3></section>' : ""}
     ${tab==="create" ? `<section class="contact-io-workspace" aria-label="Création de contact">
       <header class="contact-io-workspace-head"><div><h3>Créer une fiche de contact</h3><p>Les champs correspondent exactement aux paramètres « Champs contact ». Les mots-clés sont sélectionnables et créables directement.</p></div></header>
       <form class="contact-create-card contact-create-unified" data-contact-create>

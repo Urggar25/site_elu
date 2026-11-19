@@ -711,6 +711,75 @@ function write_admin_entity_updates(array $updates, array $user, string $operati
  * Contrairement à une sauvegarde complète de localContacts depuis le navigateur,
  * cette action ne peut pas réintroduire des contacts par un instantané périmé.
  */
+/**
+ * Réparation ciblée de champs texte : chaque remplacement exige la valeur source
+ * exacte encore présente en base. Les identifiants et références ne sont jamais mutés.
+ */
+function repair_admin_contact_fields(array $changes, array $user): array
+{
+    if (!can_administer($user)) json_response(['ok' => false, 'error' => 'Action réservée aux administrateurs.'], 403);
+    if (!$changes || count($changes) > 100) {
+        json_response(['ok' => false, 'error' => 'Un lot doit contenir entre 1 et 100 corrections.'], 400);
+    }
+    $denied = array_fill_keys(['id','keywords','tags','email','mobile','phone','telephone','birthDate','createdAt','updatedAt','gender','deathDateApprox','institutionId','contactId','externalId'], true);
+    $clean = [];
+    foreach ($changes as $change) {
+        if (!is_array($change)) json_response(['ok' => false, 'error' => 'Correction invalide.'], 400);
+        $id = $change['id'] ?? null;
+        $field = $change['field'] ?? null;
+        $from = $change['from'] ?? null;
+        $to = $change['to'] ?? null;
+        if (!is_string($id) || strlen($id) < 1 || strlen($id) > 160 ||
+            !is_string($field) || !preg_match('/^[A-Za-z][A-Za-z0-9_]{0,63}$/D', $field) || isset($denied[$field]) ||
+            !is_string($from) || !is_string($to) || $to === '' || $from === $to ||
+            strlen($from) > 1500 || strlen($to) > 1500 ||
+            strpos($to, "\xEF\xBF\xBD") !== false) {
+            json_response(['ok' => false, 'error' => 'Champ, identifiant ou valeur de correction non autorisé.'], 400);
+        }
+        $key = $id . "\0" . $field;
+        if (isset($clean[$key])) json_response(['ok' => false, 'error' => 'Correction dupliquée dans le lot.'], 400);
+        $clean[$key] = ['id'=>$id,'field'=>$field,'from'=>$from,'to'=>$to];
+    }
+    ensure_admin_state_table();
+    $database = db();
+    $database->beginTransaction();
+    try {
+        $query = $database->query('SELECT state_json FROM admin_state WHERE id = 1 FOR UPDATE');
+        $json = $query->fetchColumn();
+        if (!is_string($json)) throw new RuntimeException('Base administrative introuvable.');
+        $state = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+        unset($json,$query);
+        if (!is_array($state['localContacts'] ?? null)) throw new RuntimeException('Contacts invalides.');
+        $indexes = [];
+        foreach ($state['localContacts'] as $index => $contact) {
+            if (is_array($contact) && is_string($contact['id'] ?? null)) $indexes[$contact['id']] = $index;
+        }
+        foreach ($clean as $change) {
+            if (!array_key_exists($change['id'], $indexes)) throw new RuntimeException('Contact introuvable : correction annulée.');
+            $contactIndex = $indexes[$change['id']];
+            $contact = &$state['localContacts'][$contactIndex];
+            if (($contact['entityType'] ?? '') === 'institution' ||
+                !is_string($contact[$change['field']] ?? null) ||
+                $contact[$change['field']] !== $change['from']) {
+                throw new RuntimeException('La valeur du contact a changé : correction annulée.');
+            }
+            $contact[$change['field']] = $change['to'];
+            unset($contact);
+        }
+        append_activity($state,$user,'réparation','contacts',count($clean).' champ(s) encodage corrigé(s)');
+        $stateJson = admin_json_encode($state);
+        unset($state);
+        $save = $database->prepare('UPDATE admin_state SET state_json = ?, updated_at = NOW() WHERE id = 1');
+        $save->execute([$stateJson]);
+        unset($stateJson);
+        $database->commit();
+        return ['repaired'=>count($clean)];
+    } catch (Throwable $error) {
+        if ($database->inTransaction()) $database->rollBack();
+        throw $error;
+    }
+}
+
 function delete_admin_contacts_by_ids(array $submittedIds, array $user): array
 {
     if (!can_administer($user)) {
@@ -870,11 +939,18 @@ $data = request_json();
 $operation = clean_string($data['operation'] ?? '', 80);
 $target = clean_string($data['target'] ?? 'administration', 120);
 $detail = clean_string($data['detail'] ?? '', 500);
+$repairContactFields = $data['repairContactFields'] ?? null;
 $deleteContactIds = $data['deleteContactIds'] ?? null;
 $entityUpdates = $data['entityUpdates'] ?? null;
 $changes = $data['changes'] ?? null;
 $state = $data['state'] ?? null;
 unset($data);
+
+if ($repairContactFields !== null) {
+    if (!is_array($repairContactFields)) json_response(['ok' => false, 'error' => 'Lot de corrections invalide.'], 400);
+    $result = repair_admin_contact_fields($repairContactFields,$user);
+    json_response(['ok' => true, 'verified' => true, 'repaired' => $result['repaired'], 'version' => state_version('admin_state')]);
+}
 
 if ($deleteContactIds !== null) {
     if (!is_array($deleteContactIds)) {
