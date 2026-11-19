@@ -3392,40 +3392,41 @@ function contactKeywordChoices() {
   return [...choices.values()].map(item=>({...item,count:counts.get(item.id)||0}))
     .sort((a,b)=>a.label.localeCompare(b.label,"fr",{sensitivity:"base"}));
 }
-function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR") {
+function contactMatchesKeywords(contact, keywordIds = [], keywordMode = "OR", excludedKeywordIds = []) {
   const wanted = normalizedContactKeywordIds(keywordIds);
-  if(!wanted.length)return true;
+  const excluded = normalizedContactKeywordIds(excludedKeywordIds);
+  if(!wanted.length&&!excluded.length)return true;
   const actual=new Set(contactKeywordValues(contact).map(value=>slugify(value)));
-  return keywordMode==="AND"?wanted.every(id=>actual.has(id)):wanted.some(id=>actual.has(id));
+  if(excluded.some(id=>actual.has(id)))return false;
+  return !wanted.length||(keywordMode==="AND"?wanted.every(id=>actual.has(id)):wanted.some(id=>actual.has(id)));
 }
+let contactKeywordSearchQuery = "";
 function renderContactKeywordFilters(filters) {
-  const selected=new Set(normalizedContactKeywordIds(filters.keywordIds));
-  const options=contactKeywordChoices();
-  return `<section class="contact-keyword-search contact-keyword-picker" aria-label="Filtrer par mots-clés">
-    <div class="contact-keyword-top"><div><h3>Mots-clés <span class="contact-keyword-count">${selected.size?selected.size+" sélectionné(s)":""}</span></h3><p>Choisissez un ou plusieurs mots-clés pour affiner les résultats.</p></div><span class="contact-keyword-total">${options.length} disponibles</span></div>
-    <div class="contact-keyword-searchbar">
-      <label for="contact-keyword-query">Rechercher un mot-clé<input id="contact-keyword-query" type="search" data-contact-keyword-query placeholder="Chercher parmi les mots-clés…" autocomplete="off" /></label>
-      <div class="contact-keyword-mode" role="group" aria-label="Combinaison des mots-clés">
-        <label><input type="radio" name="keywordMode" value="OR" ${filters.keywordMode!=="AND"?"checked":""}/><span>OU</span></label>
-        <label><input type="radio" name="keywordMode" value="AND" ${filters.keywordMode==="AND"?"checked":""}/><span>ET</span></label>
-      </div>
-    </div>
-    <div class="contact-keyword-selected" data-contact-keyword-selected>${[...selected].map(id=>{
-      const word=options.find(item=>item.id===id)||{id,label:id,color:"#708199"};
-      return `<label class="contact-keyword-pill" style="--keyword-color:${attr(word.color)}"><input type="checkbox" name="keywordIds" value="${attr(word.id)}" checked /><span>${text(word.label)}</span><span aria-hidden="true">×</span></label>`;
-    }).join("")||'<span class="contact-keyword-placeholder">Aucun mot-clé sélectionné</span>'}</div>
-    <div class="contact-keyword-results" data-contact-keyword-results>
-    ${options.filter(word=>!selected.has(word.id)).map((word,i)=>`<label class="contact-keyword-option" data-contact-keyword-option data-keyword-search="${attr(normalizeName(word.label))}" ${i>=8?"hidden":""}>
-      <input type="checkbox" name="keywordIds" value="${attr(word.id)}" />
-      <span class="contact-keyword-swatch" style="background:${attr(word.color)}"></span>
-      <span class="contact-keyword-label">${text(word.label)}</span><small>${word.count}</small>
-    </label>`).join("")}
-    <p class="contact-keyword-no-match" data-contact-keyword-no-match hidden>Aucun résultat dans les mots-clés.</p></div>
-    <div class="contact-keyword-footer">
-      <button type="button" class="contact-keyword-expand" data-contact-keyword-expand ${options.length-selected.size<=8?"hidden":""}>Afficher tous les mots-clés ↓</button>
-      <button type="button" class="contact-keyword-new-toggle" data-contact-keyword-create aria-label="Créer le mot-clé saisi">+ Créer le mot-clé recherché</button>
-    </div>
-  </section>`;
+  const included=new Set(normalizedContactKeywordIds(filters.keywordIds));
+  const excluded=new Set(normalizedContactKeywordIds(filters.keywordExcludeIds));
+  const choices=contactKeywordChoices();
+  const current=id=>included.has(id)?"include":excluded.has(id)?"exclude":"none";
+  const option=(word,i)=>{
+    const state=current(word.id);
+    return '<button type="button" class="contact-keyword-option contact-keyword-tristate is-'+state+'" data-contact-keyword-option data-contact-keyword-cycle="'+attr(word.id)+'" data-keyword-search="'+attr(normalizeName(word.label))+'" data-keyword-state="'+state+'" aria-pressed="'+(state!=="none"?"true":"false")+'" title="'+attr(state==="none"?"Cliquer pour exiger ce mot-clé":state==="include"?"Cliquer pour exclure ce mot-clé":"Cliquer pour retirer ce filtre")+'" '+(i>=8?"hidden":"")+'>'+
+      '<span class="contact-keyword-state-icon" aria-hidden="true">'+(state==="include"?"✓":state==="exclude"?"−":"○")+'</span>'+
+      '<span class="contact-keyword-label">'+text(word.label)+'</span><small>'+word.count+'</small></button>';
+  };
+  const selected=[...included].map(id=>({id,state:"include"})).concat([...excluded].map(id=>({id,state:"exclude"})));
+  const chosenLabels=new Map(choices.map(word=>[word.id,word.label]));
+  return '<section class="contact-keyword-search contact-keyword-picker" aria-label="Filtrer par mots-clés">'+
+    '<div class="contact-keyword-top"><div><h3>Mots-clés <span class="contact-keyword-count">'+(selected.length?selected.length+" filtre(s) actif(s)":"")+'</span></h3><p>1 clic : requis (bleu) · 2 clics : exclu (rouge) · 3 clics : retiré. Les exclusions s’appliquent toujours, que vous choisissiez OU ou ET.</p></div><span class="contact-keyword-total">'+choices.length+' disponibles</span></div>'+
+    '<div class="contact-keyword-searchbar"><label for="contact-keyword-query">Rechercher un mot-clé<input id="contact-keyword-query" type="search" data-contact-keyword-query value="'+attr(contactKeywordSearchQuery)+'" placeholder="Chercher parmi les mots-clés…" autocomplete="off" /></label>'+
+    '<div class="contact-keyword-mode" role="group" aria-label="Combinaison des mots-clés requis"><label><input type="radio" name="keywordMode" value="OR" '+(filters.keywordMode!=="AND"?"checked":"")+'/><span>OU</span></label><label><input type="radio" name="keywordMode" value="AND" '+(filters.keywordMode==="AND"?"checked":"")+'/><span>ET</span></label></div></div>'+
+    '<div class="contact-keyword-selected" data-contact-keyword-selected>'+
+      (selected.map(item=>'<button type="button" class="contact-keyword-pill is-'+item.state+'" data-contact-keyword-cycle="'+attr(item.id)+'" data-keyword-state="'+item.state+'" title="Cliquer pour changer ce filtre">'+(item.state==="include"?"✓ ":"− ")+text(chosenLabels.get(item.id)||item.id)+' <span aria-hidden="true">↻</span></button>').join("")||'<span class="contact-keyword-placeholder">Aucun mot-clé sélectionné</span>')+
+    '</div>'+
+    [...included].map(id=>'<input type="hidden" name="keywordIds" value="'+attr(id)+'" />').join("")+
+    [...excluded].map(id=>'<input type="hidden" name="keywordExcludeIds" value="'+attr(id)+'" />').join("")+
+    '<div class="contact-keyword-results" data-contact-keyword-results>'+choices.map(option).join("")+
+    '<p class="contact-keyword-no-match" data-contact-keyword-no-match hidden>Aucun résultat dans les mots-clés.</p></div>'+
+    '<div class="contact-keyword-footer"><button type="button" class="contact-keyword-expand" data-contact-keyword-expand '+(choices.length<=8?"hidden":"")+'>Afficher tous les mots-clés ↓</button>'+
+    '<button type="button" class="contact-keyword-new-toggle" data-contact-keyword-create aria-label="Créer le mot-clé saisi">+ Créer le mot-clé recherché</button></div></section>';
 }
 function renderContactTagEditor(contact={}) {
   const choices=contactKeywordChoices();
@@ -3519,7 +3520,7 @@ function contactSearchFilters() {
     const value = String(filters[contactFilterKey(field)] || "").trim();
     if (value || ["empty","not_empty"].includes(filters["op_"+field.id])) fields[field.id] = value;
   });
-  return {includeDeceased:filters.includeDeceased===true||filters.includeDeceased==="1",q:String(filters.q||""),page,perPage,fields,extraRules:normalizeContactExtraRules(filters.extraRules),ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
+  return {includeDeceased:filters.includeDeceased===true||filters.includeDeceased==="1",q:String(filters.q||""),page,perPage,fields,extraRules:normalizeContactExtraRules(filters.extraRules),ops:Object.fromEntries(contactFields().map(f=>[f.id,String(filters["op_"+f.id]||"contains")])),fieldJoinMode:filters.fieldJoinMode==="OR"?"OR":"AND",activityKind:String(filters.activityKind||""),sortBy:String(filters.sortBy||""),sortOrder:filters.sortOrder==="desc"?"desc":"asc",keywordIds:normalizedContactKeywordIds(filters.keywordIds),keywordExcludeIds:normalizedContactKeywordIds(filters.keywordExcludeIds),keywordMode:filters.keywordMode==="AND"?"AND":"OR"};
 }
 
 
@@ -3533,7 +3534,7 @@ function normalizeSavedContactSearches(items) {
   }).map((item) => ({
     id: item.id,
     name: String(item.name || "Recherche sans nom").trim().slice(0, 120),
-    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder","includeDeceased"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
+    filters: { ...Object.fromEntries(Object.entries(item.filters && typeof item.filters === "object" ? item.filters : {}).filter(([key, val]) => (["q","perPage","fieldJoinMode","activityKind","sortBy","sortOrder","includeDeceased"].includes(key) || ((key.startsWith("field_")||key.startsWith("op_"))&&key.length<100)) && (typeof val === "string" || typeof val === "number")).map(([key, val]) => [key, String(val).slice(0, 500)])), keywordIds: normalizedContactKeywordIds(item.filters?.keywordIds), keywordExcludeIds:normalizedContactKeywordIds(item.filters?.keywordExcludeIds).filter(id=>!normalizedContactKeywordIds(item.filters?.keywordIds).includes(id)), keywordMode: item.filters?.keywordMode === "AND" ? "AND" : "OR",extraRules:normalizeContactExtraRules(item.filters?.extraRules) },
     createdAt: String(item.createdAt || ""),
     updatedAt: String(item.updatedAt || ""),
     createdBy: String(item.createdBy || ""),
@@ -3559,6 +3560,7 @@ function savedContactSearchFilters(form) {
   if (String(values.q || "").trim()) filters.q = String(values.q).trim();
   filters.perPage = String([10, 25, 100, 1000].includes(Number(values.perPage)) ? Number(values.perPage) : 100);
   filters.keywordIds = normalizedContactKeywordIds(new FormData(form).getAll("keywordIds"));
+  filters.keywordExcludeIds = normalizedContactKeywordIds(new FormData(form).getAll("keywordExcludeIds"));
   filters.keywordMode = values.keywordMode === "AND" ? "AND" : "OR";
   filters.extraRules=contactExtraRulesFromForm(form);
   filters.includeDeceased = values.includeDeceased === "1" ? "1" : "";
@@ -3571,7 +3573,7 @@ function savedContactSearchLabel(item) {
   if (item.isSnapshot) return "Liste figée (" + item.snapshotIds.length + " contacts)";
   if (item.sourceIds?.length) return (item.mergeMode==="AND"?"Intersection de ":item.mergeMode==="EXCEPT"?"Différence entre ":"Fusion de ")+item.sourceIds.length+" recherches";
   const filters = item.filters || {};
-  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + normalizeContactExtraRules(filters.extraRules).length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0);
+  const n = Object.keys(filters).filter((key) => key.startsWith("field_") || key === "q").length + normalizeContactExtraRules(filters.extraRules).length + (normalizedContactKeywordIds(filters.keywordIds).length ? 1 : 0) + (normalizedContactKeywordIds(filters.keywordExcludeIds).length ? 1 : 0);
   return n + " critère" + (n > 1 ? "s" : "");
 }
 function savedListDependencies(item) {
@@ -3609,7 +3611,7 @@ function evaluateSavedList(item, searches=normalizeSavedContactSearches(adminSta
     result=filteredContacts({
       q:filters.q||"",
       fields:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("field_")).map(([key,value])=>[key.slice(6),value])),
-      keywordIds:filters.keywordIds,keywordMode:filters.keywordMode,extraRules:filters.extraRules,includeDeceased:filters.includeDeceased==="1",
+      keywordIds:filters.keywordIds,keywordExcludeIds:filters.keywordExcludeIds,keywordMode:filters.keywordMode,extraRules:filters.extraRules,includeDeceased:filters.includeDeceased==="1",
       ops:Object.fromEntries(Object.entries(filters).filter(([key])=>key.startsWith("op_")).map(([key,value])=>[key.slice(3),value])),
       fieldJoinMode:filters.fieldJoinMode,activityKind:filters.activityKind,sortBy:filters.sortBy,sortOrder:filters.sortOrder
     });
@@ -4067,7 +4069,7 @@ function deleteContactSearch(id) {
 }
 
 function contactFiltersSignature(filters = contactSearchFilters()) {
-  return JSON.stringify({ includeDeceased:filters.includeDeceased===true,activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, extraRules:normalizeContactExtraRules(filters.extraRules), ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
+  return JSON.stringify({ includeDeceased:filters.includeDeceased===true,activeSearch: adminFilters.activeSavedContactSearchId || "", q: filters.q || "", fields: filters.fields || {}, extraRules:normalizeContactExtraRules(filters.extraRules), ops:filters.ops||{}, activityKind:filters.activityKind||"",fieldJoinMode:filters.fieldJoinMode||"AND", keywordIds: normalizedContactKeywordIds(filters.keywordIds).sort(), keywordExcludeIds:normalizedContactKeywordIds(filters.keywordExcludeIds).sort(), keywordMode: filters.keywordMode === "AND" ? "AND" : "OR" });
 }
 
 function contactAge(contact = {}) {
@@ -4099,7 +4101,7 @@ function contactMatchesDynamicFilter(contact = {}, field, rawValue = "") {
 function contactMatchesFilters(contact, filters, fieldsById) {
   const query=filters.q?normalizeName(filters.q):"";
   if(query&&!contactSearchText(contact).includes(query))return false;
-  if(!contactMatchesKeywords(contact,filters.keywordIds,filters.keywordMode))return false;
+  if(!contactMatchesKeywords(contact,filters.keywordIds,filters.keywordMode,filters.keywordExcludeIds))return false;
   if(filters.activityKind&&!contactLinkedActivity(contact,filters.activityKind))return false;
   const tests=Object.entries(filters.fields||{}).map(([id,val])=>{const field=fieldsById.get(id);return !field||contactRuleMatch(contact,field,val,filters.ops?.[id]||"contains");});
   normalizeContactExtraRules(filters.extraRules).forEach(rule=>{const field=fieldsById.get(rule.field);if(field)tests.push(contactRuleMatch(contact,field,rule.value,rule.op));});
@@ -4152,7 +4154,8 @@ function contactFilterChips(filters) {
     chips.push({key:"field_"+id,label:(labels.get(id)||id)+" "+(operatorLabels[op]||"contient")+(["empty","not_empty"].includes(op)?"":" «"+value+"»")});
   });
   normalizeContactExtraRules(filters.extraRules).forEach((rule,i)=>chips.push({key:"extraRule_"+i,label:(labels.get(rule.field)||rule.field)+" : "+rule.value}));
-  if(filters.keywordIds?.length) chips.push({key:"keywordIds",label:filters.keywordIds.length+" mot(s)-clé(s) ("+filters.keywordMode+")"});
+  if(filters.keywordIds?.length) chips.push({key:"keywordIds",label:filters.keywordIds.length+" mot(s)-clé(s) requis ("+filters.keywordMode+")"});
+  if(filters.keywordExcludeIds?.length) chips.push({key:"keywordExcludeIds",label:filters.keywordExcludeIds.length+" mot(s)-clé(s) exclus"});
   if(filters.activityKind)chips.push({key:"activityKind",label:"Activité : "+filters.activityKind});
   if(filters.fieldJoinMode==="OR")chips.push({key:"fieldJoinMode",label:"Champs : OU"});
   if(filters.sortBy)chips.push({key:"sortBy",label:"Tri : "+filters.sortBy});
@@ -4172,7 +4175,7 @@ function renderContactDynamicFilters(filters) {
   const primaryChoices=contactFields().filter(field=>primaryFields.has(field.id));
   const activeFields=new Set(Object.keys(filters.fields||{}));
   const count=contactFilterChips(filters).length;
-  const hasAdvanced=(normalizeContactExtraRules(filters.extraRules).length>0||filters.keywordIds.length>0||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
+  const hasAdvanced=(normalizeContactExtraRules(filters.extraRules).length>0||(filters.keywordIds.length>0||filters.keywordExcludeIds.length>0)||filters.activityKind||filters.fieldJoinMode==="OR"||["firstName","lastName","city"].some(id=>filters.ops?.[id]&&filters.ops[id]!=="contains")||[...activeFields].some(id=>!primaryFields.has(id)));
   return `<details class="contact-filter-section contact-dynamic-search" ${hasAdvanced?'open':''}>
     <summary><strong>Recherche avancée</strong><small>${hasAdvanced?count+" paramètre(s) actif(s)":"Ajouter des critères si nécessaire"}</small></summary>
     <div class="contact-advanced-workspace">
@@ -7067,7 +7070,7 @@ async function deleteSelectedContactsFast(selectedCount = null) {
     if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot||["manual","hybrid"].includes(current.listType))){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
     const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
     const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
-    await deleteContactsByMatcherWithProgress((contact) => contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
+    await deleteContactsByMatcherWithProgress((contact) => contact.entityType!=="institution" && (filters.includeDeceased||!isContactDeceased(contact)) && contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
     return;
   }
   await deleteContactsWithProgress([...selectedContactIds], "contacts selectionnes");
@@ -8837,6 +8840,7 @@ function applyContactKeywordForm(form) {
   adminFilters.contacts={
     ...Object.fromEntries(formData.entries()),
     keywordIds:normalizedContactKeywordIds(formData.getAll("keywordIds")),
+    keywordExcludeIds:normalizedContactKeywordIds(formData.getAll("keywordExcludeIds")),
     keywordMode:formData.get("keywordMode")==="AND"?"AND":"OR",
     page:1
   };
@@ -8848,6 +8852,7 @@ function applyContactKeywordForm(form) {
 function updateContactKeywordSuggestions(input) {
   const picker=input.closest(".contact-keyword-picker");
   if(!picker)return;
+  contactKeywordSearchQuery=input.value;
   const q=normalizeName(input.value);
   let shown=0,matched=0;
   const expanded=picker.dataset.expanded==="true";
@@ -8864,7 +8869,7 @@ function updateContactKeywordSuggestions(input) {
   const button=picker.querySelector("[data-contact-keyword-create]");
   if(button){
     const id=slugify(input.value);
-    const exists=[...picker.querySelectorAll('input[name="keywordIds"]')].some(el=>el.value===id);
+    const exists=[...picker.querySelectorAll("[data-contact-keyword-cycle]")].some(el=>el.dataset.contactKeywordCycle===id);
     button.disabled=!input.value.trim()||exists||input.value.trim().length>80;
     button.textContent=input.value.trim()?'+ Créer « '+input.value.trim().slice(0,80)+' »':'+ Créer le mot-clé saisi';
   }
@@ -8874,7 +8879,7 @@ document.addEventListener("input",event=>{
   if(event.target.matches("[data-contact-tag-query]"))updateContactTagSuggestions(event.target);
 });
 document.addEventListener("change",event=>{
-  if(!event.target.matches('.contact-keyword-picker input[name="keywordIds"], .contact-keyword-picker input[name="keywordMode"]'))return;
+  if(!event.target.matches('.contact-keyword-picker input[name="keywordMode"]'))return;
   const form=event.target.closest('[data-admin-filter="contacts"]');
   if(form)applyContactKeywordForm(form);
 });
@@ -8893,7 +8898,7 @@ document.addEventListener("keydown",event=>{
     event.preventDefault();
     const picker=event.target.closest(".contact-keyword-picker");
     const first=[...picker.querySelectorAll("[data-contact-keyword-option]")].find(node=>!node.hidden);
-    if(first)first.querySelector('input[name="keywordIds"]')?.click();
+    if(first)first.click();
     else picker.querySelector("[data-contact-keyword-create]")?.click();
   }
 });
@@ -9166,6 +9171,7 @@ document.addEventListener("click", async (event) => {
     if (contactById(id)) {
       selectedContactId = id;
       adminFilters.contacts = { perPage: contactSearchFilters().perPage, page: 1 };
+    contactKeywordSearchQuery="";
       clearContactSelection();
       activeAdminSection = "contacts";
       renderAdmin();
@@ -9613,6 +9619,7 @@ document.addEventListener("click", async (event) => {
   if(removeChip){
     const key=removeChip.dataset.contactRemoveFilter;
     if(key==="keywordIds"){adminFilters.contacts.keywordIds=[];}
+    else if(key==="keywordExcludeIds"){adminFilters.contacts.keywordExcludeIds=[];}
     else if(key==="activityKind"){adminFilters.contacts.activityKind="";}
     else if(key==="fieldJoinMode"){adminFilters.contacts.fieldJoinMode="AND";}
     else if(key==="sortBy"){adminFilters.contacts.sortBy="";adminFilters.contacts.sortOrder="asc";}
@@ -9652,6 +9659,33 @@ document.addEventListener("click", async (event) => {
     addContactTag(tagEditor,old?.label||label);
     return;
   }
+  const keywordCycle=event.target.closest("[data-contact-keyword-cycle]");
+  if(keywordCycle){
+    const id=keywordCycle.dataset.contactKeywordCycle;
+    const form=keywordCycle.closest('[data-admin-filter="contacts"]');
+    if(!form)return;
+    const data=new FormData(form);
+    const required=new Set(normalizedContactKeywordIds(data.getAll("keywordIds")));
+    const excluded=new Set(normalizedContactKeywordIds(data.getAll("keywordExcludeIds")));
+    if(required.has(id)){required.delete(id);excluded.add(id);}
+    else if(excluded.has(id)){excluded.delete(id);}
+    else required.add(id);
+    adminFilters.contacts={
+      ...Object.fromEntries(data.entries()),
+      keywordIds:[...required],
+      keywordExcludeIds:[...excluded],
+      keywordMode:data.get("keywordMode")==="AND"?"AND":"OR",
+      extraRules:contactExtraRulesFromForm(form),
+      page:1
+    };
+    adminFilters.activeSavedContactSearchId="";
+    clearContactSelection();
+    contactMobileDetailOpen=false;
+    renderAdmin();
+    const input=document.querySelector("[data-contact-keyword-query]");
+    if(input&&contactKeywordSearchQuery){updateContactKeywordSuggestions(input);}
+    return;
+  }
   if(event.target.closest("[data-contact-keyword-expand]")){
     const picker=event.target.closest(".contact-keyword-picker");
     if(picker){picker.dataset.expanded=picker.dataset.expanded==="true"?"false":"true";updateContactKeywordSuggestions(picker.querySelector("[data-contact-keyword-query]"));}
@@ -9669,7 +9703,7 @@ document.addEventListener("click", async (event) => {
     const form=createContactKeyword.closest('[data-admin-filter="contacts"]');
     const data=form?new FormData(form):null;
     adminState.contactKeywords=normalizeKeywords([...(adminState.contactKeywords||[]),{id,label,color:"#2d6fb6"}]);
-    if(data)adminFilters.contacts={...Object.fromEntries(data.entries()),keywordIds:normalizedContactKeywordIds([...data.getAll("keywordIds"),id]),keywordMode:data.get("keywordMode")==="AND"?"AND":"OR",page:1};
+    if(data)adminFilters.contacts={...Object.fromEntries(data.entries()),keywordIds:normalizedContactKeywordIds([...data.getAll("keywordIds"),id]),keywordExcludeIds:normalizedContactKeywordIds(data.getAll("keywordExcludeIds")),keywordMode:data.get("keywordMode")==="AND"?"AND":"OR",page:1};
     adminFilters.activeSavedContactSearchId="";
     clearContactSelection();
     saveAdminState("creation","mot-cle contact",label);
@@ -9777,7 +9811,13 @@ document.addEventListener("click", async (event) => {
   const deleteSelectedContacts = event.target.closest("[data-delete-selected-contacts]");
   if (deleteSelectedContacts && isAdmin()) {
     const selectedCount = isAllFilteredContactSelectionActive(contactSearchFilters()) ? filteredContacts().length : selectedContactIds.size;
-    if (selectedCount && confirm(`Confirmer la suppression de ${selectedCount} contact(s) ?`)) {
+    if(selectedCount){
+      const message="Supprimer définitivement "+selectedCount+" contact(s) ?\nCette opération supprime également leurs liens dans les événements, listes et dossiers associés.";
+      if(!confirm(message))return;
+      if(selectedCount>=100){
+        const typed=prompt("Suppression massive de "+selectedCount+" contacts. Pour confirmer, saisissez exactement : SUPPRIMER "+selectedCount);
+        if(typed!=="SUPPRIMER "+selectedCount){showToast("Suppression annulée : confirmation incorrecte.");return;}
+      }
       await deleteSelectedContactsFast(selectedCount);
     }
   }
@@ -10062,7 +10102,7 @@ document.addEventListener("submit", async (event) => {
     const key = filter.dataset.adminFilter;
     const values = new FormData(filter, event.submitter);
     adminFilters[key] = Object.fromEntries(values.entries());
-    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.extraRules=contactExtraRulesFromForm(filter); adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
+    if (key === "contacts") { contactMobileDetailOpen=false; adminFilters.contacts.keywordIds = normalizedContactKeywordIds(values.getAll("keywordIds")); adminFilters.contacts.keywordExcludeIds = normalizedContactKeywordIds(values.getAll("keywordExcludeIds")); adminFilters.contacts.keywordMode = values.get("keywordMode") === "AND" ? "AND" : "OR"; adminFilters.contacts.extraRules=contactExtraRulesFromForm(filter); adminFilters.contacts.page = 1; adminFilters.activeSavedContactSearchId = ""; clearContactSelection(); }
     renderAdmin();
     return;
   }
