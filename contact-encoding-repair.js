@@ -182,22 +182,27 @@ function repairSafeText(value){return text(String(value??""));}
 function renderEncodingRepair(){
   const s=encodingRepairState;
   if(!isAdmin())return '<section class="contact-io-workspace"><h3>Accès réservé aux administrateurs</h3></section>';
-  const list=repairRelevantIssues(),perPage=30,maxPage=Math.max(0,Math.ceil(list.length/perPage)-1);
+  const list=s.view==="groups"?repairGroupList():repairRelevantIssues(),perPage=30,maxPage=Math.max(0,Math.ceil(list.length/perPage)-1);
   s.page=Math.min(maxPage,s.page);
-  const checked=[...s.selections].map(key=>s.issues.find(issue=>issue.key===key)).filter(Boolean);
-  const valid=checked.filter(issue=>{
-    const next=repairIssueValue(issue);
-    return next&&next!==issue.value&&!next.includes("�")&&!repairMojibakeSimple.test(next);
-  });
+  const {selected,valid}=repairSelectedStats();
   const stats={automatic:s.issues.filter(i=>i.confidence==="automatic").length,review:s.issues.filter(i=>i.confidence==="review").length,unresolved:s.issues.filter(i=>i.confidence==="unresolved").length};
-  const rows=list.slice(s.page*perPage,(s.page+1)*perPage).map(issue=>{
-    const value=repairIssueValue(issue),checked=s.selections.has(issue.key);
-    return '<tr><td><input type="checkbox" data-repair-select="'+attr(issue.key)+'" '+(checked?"checked":"")+' aria-label="Corriger ce champ" /></td>'+
-      '<td><strong>'+repairSafeText(issue.name)+'</strong><small>'+repairSafeText(issue.field)+'</small></td>'+
-      '<td class="repair-original">'+repairSafeText(issue.value)+'</td>'+
-      '<td><input type="text" data-repair-value="'+attr(issue.key)+'" value="'+attr(value)+'" placeholder="Corriger manuellement…" maxlength="300" aria-label="Valeur corrigée" /></td>'+
-      '<td>'+repairSafeText(issue.confidence==="automatic"?"Automatique":issue.confidence==="review"?"À vérifier":"Manuel requis")+'</td></tr>';
-  }).join("");
+  const rows=s.view==="groups"?
+    list.slice(s.page*perPage,(s.page+1)*perPage).map(group=>{
+      const checked=s.groupSelections.has(group.key),value=repairGroupValue(group);
+      return '<tr><td><input type="checkbox" data-repair-group-select="'+attr(group.key)+'" '+(checked?"checked":"")+' aria-label="Corriger toutes les occurrences de cette valeur" /></td>'+
+        '<td><strong>'+repairSafeText(group.issues.length.toLocaleString("fr-FR"))+' fiches</strong><small>'+repairSafeText(group.field)+'</small><small>'+repairSafeText(group.samples.join(" · "))+'</small></td>'+
+        '<td class="repair-original">'+repairSafeText(group.value)+'</td>'+
+        '<td><input type="text" data-repair-group-value="'+attr(group.key)+'" value="'+attr(value)+'" placeholder="Correction pour toutes les fiches…" maxlength="300" aria-label="Correction collective" /></td>'+
+        '<td>'+repairSafeText(group.confidence==="automatic"?"Automatique":group.confidence==="review"?"À vérifier":"Manuel requis")+'</td></tr>';
+    }).join(""):
+    list.slice(s.page*perPage,(s.page+1)*perPage).map(issue=>{
+      const value=repairIssueValue(issue),checked=s.selections.has(issue.key);
+      return '<tr><td><input type="checkbox" data-repair-select="'+attr(issue.key)+'" '+(checked?"checked":"")+' aria-label="Corriger ce champ" /></td>'+
+        '<td><strong>'+repairSafeText(issue.name)+'</strong><small>'+repairSafeText(issue.field)+'</small></td>'+
+        '<td class="repair-original">'+repairSafeText(issue.value)+'</td>'+
+        '<td><input type="text" data-repair-value="'+attr(issue.key)+'" value="'+attr(value)+'" placeholder="Corriger manuellement…" maxlength="300" aria-label="Valeur corrigée" /></td>'+
+        '<td>'+repairSafeText(issue.confidence==="automatic"?"Automatique":issue.confidence==="review"?"À vérifier":"Manuel requis")+'</td></tr>';
+    }).join("");
   const stale=s.backupDone&&s.backupSignature!==repairSelectionSignature();
   return '<div class="contact-io-workspace encoding-repair"><header class="contact-io-workspace-head"><div><h3>Réparation de l’encodage</h3>'+
     '<p>Audit non destructif des fiches. Correction automatique uniquement des chaînes UTF-8 récupérables ; les caractères « � » doivent être vérifiés avant correction.</p></div></header>'+
@@ -207,16 +212,17 @@ function renderEncodingRepair(){
     (s.error?'<p class="bulk-contact-error" role="alert">'+repairSafeText(s.error)+'</p>':"")+
     (s.issues.length?'<section class="bulk-contact-card"><h4>2. Vérifier les propositions</h4>'+
     '<p>'+s.issues.length.toLocaleString("fr-FR")+' champs suspects · '+stats.automatic+' décodages automatiques · '+stats.review+' suggestions à valider · '+stats.unresolved+' sans correction sûre.</p>'+
-    '<p>Un « � » peut signaler une information définitivement perdue. Ne remplacez pas ces caractères au hasard : vérifiez avec une source fiable.</p>'+
+    '<p>Une même valeur incorrecte peut apparaître sur des milliers de fiches. En mode « Par valeur », corrigez-la une fois pour toutes les occurrences. Pour les caractères « � », vérifiez la correction avec une source fiable.</p>'+
+    '<div class="repair-view-choice"><label><input type="radio" name="repairView" value="groups" '+(s.view==="groups"?"checked":"")+' /> Par valeur identique ('+s.groups.length+' groupes)</label><label><input type="radio" name="repairView" value="individual" '+(s.view==="individual"?"checked":"")+' /> Fiche par fiche</label></div>'+
     '<div class="repair-toolbar"><label>Filtrer <select data-repair-mode><option value="all" '+(s.mode==="all"?"selected":"")+'>Tous</option><option value="automatic" '+(s.mode==="automatic"?"selected":"")+'>Décodage automatique</option><option value="manual" '+(s.mode==="manual"?"selected":"")+'>Révision manuelle</option><option value="selected" '+(s.mode==="selected"?"selected":"")+'>Sélectionnés</option></select></label>'+
     '<label>Rechercher <input data-repair-query value="'+attr(s.query)+'" placeholder="Nom, ville, valeur…" /></label></div>'+
-    '<div class="repair-table-wrap"><table><thead><tr><th>Corriger</th><th>Contact · champ</th><th>Valeur actuelle</th><th>Proposition modifiable</th><th>Fiabilité</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="repair-table-wrap"><table><thead><tr><th>Corriger</th><th>'+(s.view==="groups"?"Occurrences · champ":"Contact · champ")+'</th><th>Valeur actuelle</th><th>Proposition modifiable</th><th>Fiabilité</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<div class="repair-pages"><button type="button" data-repair-page="-1" '+(!s.page?"disabled":"")+'>Précédent</button><span>Page '+(s.page+1)+' / '+(maxPage+1)+'</span><button type="button" data-repair-page="1" '+(s.page>=maxPage?"disabled":"")+'>Suivant</button></div>'+
     '</section><section class="bulk-contact-card"><h4>3. Sauvegarder avant toute modification</h4>'+
     '<p>Exportez une copie JSON complète des contacts AVANT de lancer la correction. Le fichier contient des données personnelles : conservez-le dans un emplacement sécurisé.</p>'+
     '<button class="secondary-action" type="button" data-repair-backup>Exporter la sauvegarde JSON</button>'+
-    '<p><strong>'+s.selections.size+' champs sélectionnés</strong> · '+valid.length+' propositions applicables'+(stale?' · Sélection modifiée depuis la sauvegarde':"")+'</p>'+
-    '<button type="button" class="primary-action" data-repair-apply '+(s.busy||s.scanning||!s.backupDone||stale||!valid.length?"disabled":"")+'>'+(s.busy?"Enregistrement…":"Appliquer les "+valid.length+" corrections vérifiées")+'</button>'+
+    '<p><strong>'+selected+' champs sélectionnés</strong> · '+valid+' propositions applicables'+(stale?' · Sélection modifiée depuis la sauvegarde':"")+'</p>'+
+    '<button type="button" class="primary-action" data-repair-apply '+(s.busy||s.scanning||!s.backupDone||stale||!valid?"disabled":"")+'>'+(s.busy?"Enregistrement…":"Appliquer les "+valid+" corrections vérifiées")+'</button>'+
     '<small>Chaque lot est enregistré sur le serveur uniquement si la valeur d’origine correspond toujours. Les opérations sont journalisées. Une erreur stoppe les lots suivants.</small></section>':"")+
     '</div>';
 }
