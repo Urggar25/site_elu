@@ -11869,3 +11869,14 @@ body.admin-mode .contact-create-section-head span{font-size:.8rem;opacity:.75}
 body.admin-mode .contact-create-footer{display:flex;justify-content:flex-end;gap:10px;border-top:1px solid var(--border,#d9e0e8);padding-top:16px}
 @media(max-width:850px){body.admin-mode .contact-io-import-options,body.admin-mode .contact-io-export-choices{grid-template-columns:1fr}body.admin-mode .contact-create-unified .contact-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:540px){body.admin-mode .contact-io-page .contact-io-tabs button{flex-basis:100%;text-align:left}body.admin-mode .contact-create-unified .contact-form-grid{grid-template-columns:1fr}body.admin-mode .contact-create-unified .contact-form-grid>label:has(textarea){grid-column:auto}body.admin-mode .contact-io-workspace{padding:15px}body.admin-mode .contact-search-head-actions{width:100%}}
+
+/* Tri-state keyword filtering: neutral -> required -> excluded -> neutral. */
+body.admin-mode .contact-keyword-picker .contact-keyword-results button.contact-keyword-tristate{font:inherit;font-size:.82rem;font-weight:650;appearance:none;text-align:left;cursor:pointer;min-height:38px;display:inline-flex;align-items:center;gap:6px}
+body.admin-mode .contact-keyword-picker .contact-keyword-results button.contact-keyword-tristate.is-include{background:#e3f0ff;border-color:#3479cc;color:#14549c;box-shadow:inset 0 0 0 1px #3479cc}
+body.admin-mode .contact-keyword-picker .contact-keyword-results button.contact-keyword-tristate.is-exclude{background:#ffebe9;border-color:#d24b4b;color:#a21d29;box-shadow:inset 0 0 0 1px #d24b4b}
+body.admin-mode .contact-keyword-picker .contact-keyword-results button.contact-keyword-tristate:focus-visible{outline:3px solid #1d62b8;outline-offset:2px}
+body.admin-mode .contact-keyword-picker .contact-keyword-state-icon{display:inline-grid;place-items:center;font-size:.82rem;font-weight:900;min-width:15px}
+body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill{font:inherit;font-size:.82rem;font-weight:750;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill.is-include{background:#e2efff;color:#14549c;border-color:#3479cc}
+body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill.is-exclude{background:#ffebe9;color:#a21d29;border-color:#d24b4b}
+body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill:focus-visible{outline:3px solid #1d62b8;outline-offset:2px}
