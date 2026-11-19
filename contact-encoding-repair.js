@@ -228,7 +228,13 @@ function renderEncodingRepair(){
 }
 function repairSelectionSignature(){
   const s=encodingRepairState;
-  return JSON.stringify([...s.selections].sort().map(key=>[key,s.overrides.get(key)||""]));
+  if(s.view==="groups")return JSON.stringify({view:"groups",selections:[...s.groupSelections].sort().map(key=>[key,s.groupOverrides.get(key)||""])});
+  return JSON.stringify({view:"individual",selections:[...s.selections].sort().map(key=>[key,s.overrides.get(key)||""])});
+}
+function repairGroupChanges(){
+  const s=encodingRepairState;
+  return s.groups.filter(g=>s.groupSelections.has(g.key)&&repairGroupValid(g))
+    .map(g=>({field:g.field,from:g.value,to:repairGroupValue(g),expected:g.issues.length}));
 }
 function repairChanges(){
   return encodingRepairState.issues.filter(i=>encodingRepairState.selections.has(i.key)).map(i=>({id:i.id,field:i.field,from:i.value,to:repairIssueValue(i)}))
@@ -244,27 +250,50 @@ function repairExportBackup(){
 async function repairApplyChanges(){
   const state=encodingRepairState;
   if(state.busy||!state.backupDone||state.backupSignature!==repairSelectionSignature())return;
-  const changes=repairChanges();
-  if(!changes.length)return;
-  const asked=prompt("Vous allez modifier "+changes.length+" champs de contacts. Après avoir sécurisé la sauvegarde, saisissez : REPARER "+changes.length);
-  if(asked!=="REPARER "+changes.length)return;
+  const grouped=state.view==="groups";
+  const changes=grouped?repairGroupChanges():repairChanges();
+  const count=grouped?changes.reduce((n,g)=>n+g.expected,0):changes.length;
+  if(!count)return;
+  const asked=prompt("Vous allez modifier "+count+" champs de contacts. Après avoir sécurisé la sauvegarde, saisissez : REPARER "+count);
+  if(asked!=="REPARER "+count)return;
   state.busy=true;state.error="";renderAdmin();
   let done=0;
   try{
-    for(let i=0;i<changes.length;i+=100){
-      const batch=changes.slice(i,i+100);
-      const result=await adminApiRequest("POST",{operation:"reparation-encodage",target:"contacts",repairContactFields:batch});
-      if(result.repaired!==batch.length||result.verified!==true)throw new Error("Le serveur n’a pas confirmé toutes les corrections du lot.");
-      const lookup=new Map(adminState.localContacts.map(c=>[c.id,c]));
-      for(const change of batch){
-        const contact=lookup.get(change.id);
-        if(contact)contact[change.field]=change.to;
-        state.selections.delete(repairIssueKey(change.id,change.field));
+    if(grouped){
+      for(let i=0;i<changes.length;i+=15){
+        const batch=changes.slice(i,i+15);
+        const result=await adminApiRequest("POST",{operation:"reparation-encodage",target:"contacts",repairContactGroups:batch});
+        const expected=batch.reduce((sum,item)=>sum+item.expected,0);
+        if(result.repaired!==expected||result.verified!==true)throw new Error("La base n’a pas confirmé toutes les corrections du lot.");
+        const map=new Map(batch.map(g=>[repairGroupKey(g.field,g.from),g]));
+        for(const contact of adminState.localContacts){
+          for(const field of [...new Set(batch.map(g=>g.field))]){
+            const group=map.get(repairGroupKey(field,contact[field]));
+            if(group)contact[field]=group.to;
+          }
+        }
+        for(const group of batch)state.groupSelections.delete(repairGroupKey(group.field,group.from));
+        done+=expected;
+        state.message=done+" / "+count+" corrections enregistrées.";
+        const progress=document.querySelector("[data-repair-progress]");if(progress)progress.textContent=state.message;
+        await new Promise(resolve=>setTimeout(resolve,0));
       }
-      done+=batch.length;
-      state.message=done+" / "+changes.length+" corrections enregistrées.";
-      const progress=document.querySelector("[data-repair-progress]");if(progress)progress.textContent=state.message;
-      await new Promise(resolve=>setTimeout(resolve,0));
+    }else{
+      const lookup=new Map(adminState.localContacts.map(c=>[c.id,c]));
+      for(let i=0;i<changes.length;i+=100){
+        const batch=changes.slice(i,i+100);
+        const result=await adminApiRequest("POST",{operation:"reparation-encodage",target:"contacts",repairContactFields:batch});
+        if(result.repaired!==batch.length||result.verified!==true)throw new Error("Le serveur n’a pas confirmé toutes les corrections du lot.");
+        for(const change of batch){
+          const contact=lookup.get(change.id);
+          if(contact)contact[change.field]=change.to;
+          state.selections.delete(repairIssueKey(change.id,change.field));
+        }
+        done+=batch.length;
+        state.message=done+" / "+count+" corrections enregistrées.";
+        const progress=document.querySelector("[data-repair-progress]");if(progress)progress.textContent=state.message;
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
     }
     state.backupDone=false;state.issues=[];state.overrides.clear();resetContactLookupCaches();
     adminSyncStatus="synced";adminSyncMessage=done+" corrections d’encodage confirmées sur le serveur.";
@@ -287,6 +316,9 @@ if(typeof document!=="undefined"){
  });
  document.addEventListener("change",event=>{
    const t=event.target,s=encodingRepairState;
+   if(t.matches('input[name="repairView"]')){s.view=t.value;s.page=0;s.backupDone=false;renderAdmin();return;}
+   if(t.matches("[data-repair-group-select]")){if(t.checked)s.groupSelections.add(t.dataset.repairGroupSelect);else s.groupSelections.delete(t.dataset.repairGroupSelect);s.backupDone=false;renderAdmin();return;}
+   if(t.matches("[data-repair-group-value]")){const key=t.dataset.repairGroupValue,value=t.value.trim();s.groupOverrides.set(key,value);if(value&&!value.includes("�"))s.groupSelections.add(key);else s.groupSelections.delete(key);s.backupDone=false;renderAdmin();return;}
    if(t.matches("[data-repair-select]")){if(t.checked)s.selections.add(t.dataset.repairSelect);else s.selections.delete(t.dataset.repairSelect);s.backupDone=false;renderAdmin();}
    if(t.matches("[data-repair-mode]")){s.mode=t.value;s.page=0;renderAdmin();}
    if(t.matches("[data-repair-value]")){const key=t.dataset.repairValue,value=t.value.trim();s.overrides.set(key,value);if(value&&!value.includes("�"))s.selections.add(key);else s.selections.delete(key);s.backupDone=false;renderAdmin();}
