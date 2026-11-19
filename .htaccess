@@ -20,7 +20,7 @@ Options -Indexes
   </IfModule>
 </FilesMatch>
 
-<FilesMatch "^(app\.js|styles\.css)$">
+<FilesMatch "^(app\.js|styles\.css|bulk-contact-update\.js|bulk-contact-update\.css)$">
   <IfModule mod_headers.c>
     Header set Cache-Control "no-cache, must-revalidate, max-age=0"
   </IfModule>

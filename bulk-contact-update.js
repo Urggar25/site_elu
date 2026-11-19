@@ -107,7 +107,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
     for(const update of updates){
       const raw=String(row[update.col]??"").trim();
       if(!raw)continue;
-      if(update.id==="address_auto"){
+      if(update.id==="address_auto"||(update.id==="streetNumber"&&/^\d{1,5}(?:\s*(?:bis|ter|quater|[a-z]))?\s+\S+/i.test(raw))){
         const address=bulkAddressParts(raw);
         bulkApplyValue(candidate,"streetNumber",address.number,update.policy);
         bulkApplyValue(candidate,"streetName",address.street,update.policy);
@@ -200,13 +200,16 @@ async function bulkReadExcel(file) {
   if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
   return {headers:rows[0],rows:rows.slice(1),sheet:sheets[0].getAttribute("name")||"Feuille 1"};
 }
-function bulkAutoMapping(headers,mode="city") {
+function bulkAutoMapping(headers,mode="city",rows=[]) {
   const aliases=contactImportAliases();
   const chosen=mode==="birth"?"birthDate":"city";
   return headers.map(header=>{
     const key=slugify(header).replace(/-/g,"");
-    const addressAliases=new Set(["adresse","adressecomplete","adressepostale","adressevoie","numerointeretnomderue"]);
-    if(addressAliases.has(key))return "address_auto";
+    const addressAliases=new Set(["adresse","adresse1","adressecomplete","adressepostale","adressevoie","numeroetnomderue","numerointeretnomderue","adresserue","voie"]);
+    const column=headers.indexOf(header);
+    const examples=rows.slice(0,25).map(row=>String(row[column]??"").trim()).filter(Boolean);
+    const looksLikeFullAddress=examples.some(value=>/^\d{1,5}(?:\s*(?:bis|ter|quater|[a-z]))?\s+\S+/i.test(value));
+    if(addressAliases.has(key) || ((key==="numeroderue"||key==="numero"||key==="streetnumber"||key==="rue"||key==="streetname")&&looksLikeFullAddress))return "address_auto";
     const id=aliases[key]||(key==="commune"||key==="municipalite"?"city":"");
     return ["lastName","firstName",chosen].includes(id)?"match_"+id:id;
   });
@@ -228,7 +231,7 @@ function bulkExcelPanel() {
   const state=bulkContactUpdate;
   const fields=[["","Ignorer cette colonne"],["match_lastName","Clé : Nom"],["match_firstName","Clé : Prénom"],["match_city","Clé : Commune"],["match_birthDate","Clé : Date de naissance"],["address_auto","Adresse complète (numéro et rue)"],...bulkEligibleFields().map(f=>[f.id,"Champ : "+f.label])];
   const policies=bulkColumnPolicies(state.mapping,state.columnPolicies);
-  const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les colonnes-clés servent au rapprochement. Chaque colonne de données dispose de sa propre règle de mise à jour ; une adresse complète peut être séparée automatiquement.</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select><select data-bulk-policy="'+i+'" aria-label="Action pour '+attr(header||("colonne "+(i+1)))+'" '+(!state.mapping[i]||state.mapping[i].startsWith("match_")?"disabled":"")+'>'+bulkOptions([["ignore","Ignorer"],["overwrite","Remplir si différent mais non vide"],["empty","Remplir si vide"]],policies[i])+'</select></label>').join("")+'</div></section>':"";
+  const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les colonnes-clés servent au rapprochement. Chaque colonne possède deux menus : le champ de destination, puis l’action « Ignorer / Remplir si différent / Remplir si vide ». Pour une adresse complète, choisissez « Adresse complète (numéro et rue) ».</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><span class="bulk-contact-field-label">Champ à associer</span><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select><span class="bulk-contact-field-label">Action sur la fiche</span><select data-bulk-policy="'+i+'" aria-label="Action pour '+attr(header||("colonne "+(i+1)))+'" '+(!state.mapping[i]||state.mapping[i].startsWith("match_")?"disabled":"")+'>'+bulkOptions([["ignore","Ignorer"],["overwrite","Remplir si différent mais non vide"],["empty","Remplir si vide"]],policies[i])+'</select></label>').join("")+'</div></section>':"";
   const preview=state.preview&&state.mode==="excel"?bulkPreviewHtml(state.preview):"";
   return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV. Le fichier est analysé dans votre navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
     (state.file?'<p><strong>'+bulkEscape(state.file.name)+'</strong> · '+bulkEscape(state.sheet)+' · '+state.rows.length+' ligne(s)</p>':"")+'</div>'+
@@ -254,7 +257,7 @@ function bulkPreviewHtml(preview) {
 }
 function renderBulkContactUpdates() {
   const s=bulkContactUpdate;
-  return '<section class="contact-io-workspace bulk-contact-workspace"><header class="contact-io-workspace-head"><div><h3>Mise à jour de fiches</h3><p>Mise à jour massive avec rapprochement strict et prévisualisation. Création optionnelle des contacts absents ; prévisualisation avant tout enregistrement.</p></div></header>'+
+  return '<section class="contact-io-workspace bulk-contact-workspace"><header class="contact-io-workspace-head"><div><h3>Mise à jour de fiches</h3><p>Mise à jour massive avec rapprochement strict et prévisualisation. Création optionnelle des contacts absents et découpage des adresses. Version du module : 19 novembre 2026.</p></div></header>'+
     '<div class="bulk-contact-modes"><button type="button" data-bulk-mode="excel" class="'+(s.mode==="excel"?"is-active":"")+'">À partir d’un Excel</button><button type="button" data-bulk-mode="tags" class="'+(s.mode==="tags"?"is-active":"")+'">Mots-clés en masse</button></div>'+
     bulkScopeSelector()+(s.error?'<p class="bulk-contact-error" role="alert">'+bulkEscape(s.error)+'</p>':"")+
     (s.lastResult?'<p class="bulk-contact-success" role="status">'+bulkEscape(s.lastResult)+'</p>':"")+
@@ -311,7 +314,7 @@ if(typeof document!=="undefined"){
       bulkContactUpdate.error="";bulkContactUpdate.preview=null;bulkContactUpdate.file=null;
       try {
         const sheet=await bulkReadExcel(file);
-        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers,bulkContactUpdate.matchMode),columnPolicies:[]});
+        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers,bulkContactUpdate.matchMode,sheet.rows),columnPolicies:[]});
       } catch(error) {bulkContactUpdate.error=error.message||"Lecture impossible.";}
       renderAdmin();return;
     }
@@ -337,7 +340,7 @@ if(typeof document!=="undefined"){
       try{
         if(!s.rows.length)throw new Error("Chargez un fichier d'abord.");
         const contacts=bulkScopeContacts(s.scope,s.listId);
-        if(!contacts.length)throw new Error("Le périmètre choisi ne contient aucun contact.");
+        if(!contacts.length&&!s.createMissing)throw new Error("Le périmètre choisi ne contient aucun contact.");
         s.preview=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,policies:s.columnPolicies,allContacts:adminState.localContacts});
       }catch(error){s.error=error.message;}
       renderAdmin();return;
