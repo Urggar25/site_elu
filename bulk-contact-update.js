@@ -36,7 +36,7 @@ function bulkColumns(headers, mode, mapping) {
 }
 function bulkEligibleFields() {
   // Une modification de l'identité changerait l'ID de la fiche et ses liens : volontairement exclue.
-  const blocked = new Set(["id","keywords","deathDateApprox","createdAt","updatedAt","tags"]);
+  const blocked = new Set(["id","deathDateApprox","createdAt","updatedAt","tags"]);
   return contactFields().filter(f=>!blocked.has(f.id));
 }
 function bulkScopeContacts(scope, listId) {
@@ -120,6 +120,11 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
       bulkApplyValue(candidate,field.id,value,update.policy);
     }
     if(invalid){reject("Valeur de colonne invalide","invalid");return;}
+    if(Object.prototype.hasOwnProperty.call(candidate,"keywords")){
+      const values=Array.isArray(candidate.keywords)?candidate.keywords:String(candidate.keywords||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
+      candidate.keywords=values.some(isDeathKeyword)?["décès"]:values;
+      if(JSON.stringify(candidate.keywords)!==JSON.stringify(original.keywords))candidate.tags=[...candidate.keywords];
+    }
     if(creating){
       const now=new Date().toISOString();
       const contact=normalizeContactRecord({...candidate,createdAt:now,updatedAt:now},usedIds);
