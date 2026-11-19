@@ -40,19 +40,24 @@ function repairSuggestion(value,cleanValues){
   // Un seul candidat non corrompu avec même structure et mêmes lettres connues.
   if(!value.includes("�"))return "";
   const key=repairMaskKey(value),matches=[];
-  for(const good of cleanValues){
+  for(const good of (cleanValues?.get(value.length)||[])){
     if(good.length!==value.length||good===value)continue;
     let ok=true;
-    for(let i=0;i<key.length;i++)if(key[i]!=="?"&&key[i]!==repairMaskKey(good)[i]){ok=false;break;}
+    const goodKey=repairMaskKey(good);
+    for(let i=0;i<key.length;i++)if(key[i]!=="?"&&key[i]!==goodKey[i]){ok=false;break;}
     if(ok){matches.push(good);if(matches.length>1)break;}
   }
   return matches.length===1?matches[0]:"";
 }
 function repairFieldValues(contacts,fields){
-  const byField=new Map(fields.map(id=>[id,new Set()]));
+  const byField=new Map(fields.map(id=>[id,new Map()]));
   for(const c of contacts)for(const field of fields){
     const v=c[field];
-    if(typeof v==="string"&&v.length<=150&&!repairMojibakePattern.test(v))byField.get(field).add(v);
+    if(typeof v==="string"&&v.length<=150&&!repairMojibakePattern.test(v)){
+      const lengthValues=byField.get(field);
+      if(!lengthValues.has(v.length))lengthValues.set(v.length,new Set());
+      lengthValues.get(v.length).add(v);
+    }
   }
   return byField;
 }
@@ -160,7 +165,7 @@ function repairExportBackup(){
   const state=encodingRepairState;
   const filename="sauvegarde-contacts-avant-reparation-"+new Date().toISOString().slice(0,19).replace(/:/g,"-")+".json";
   const data={generatedAt:new Date().toISOString(),contactCount:adminState.localContacts.length,localContacts:adminState.localContacts};
-  downloadFile(filename,JSON.stringify(data,null,2),"application/json;charset=utf-8");
+  downloadFile(filename,JSON.stringify(data),"application/json;charset=utf-8");
   state.backupDone=true;state.backupSignature=repairSelectionSignature();renderAdmin();
 }
 async function repairApplyChanges(){
