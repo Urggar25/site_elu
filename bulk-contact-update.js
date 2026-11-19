@@ -210,16 +210,17 @@ function bulkScopeSelector() {
   const scopes=[["all","Tous les contacts"],["selected","Contacts sélectionnés ("+selectedCount+")"],["results","Résultats de la recherche actuelle"],["list","Une liste sauvegardée"]];
   return '<div class="bulk-contact-scope"><label>Périmètre des fiches <select data-bulk-scope>'+bulkOptions(scopes,bulkContactUpdate.scope)+'</select></label>'+
     (bulkContactUpdate.scope==="list"?'<label>Liste <select data-bulk-list>'+bulkOptions([["","Choisir une liste…"],...lists.map(item=>[item.id,item.name])],bulkContactUpdate.listId)+'</select></label>':"")+
-    '<small>Seules les fiches de ce périmètre seront modifiées. Aucun contact n’est créé.</small></div>';
+    '<small>Ce périmètre limite les fiches recherchées ; les nouvelles fiches sont créées uniquement si elles sont absentes de toute la base.</small></div>';
 }
 function bulkExcelPanel() {
   const state=bulkContactUpdate;
-  const fields=[["","Ignorer cette colonne"],["match_lastName","Clé : Nom"],["match_firstName","Clé : Prénom"],["match_city","Clé : Commune"],["match_birthDate","Clé : Date de naissance"],...bulkEligibleFields().map(f=>[f.id,"Modifier : "+f.label])];
-  const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les trois colonnes d’identité servent uniquement au rapprochement. Les autres champs sont mis à jour lorsque la cellule n’est pas vide.</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select></label>').join("")+'</div></section>':"";
+  const fields=[["","Ignorer cette colonne"],["match_lastName","Clé : Nom"],["match_firstName","Clé : Prénom"],["match_city","Clé : Commune"],["match_birthDate","Clé : Date de naissance"],["address_auto","Adresse complète (numéro et rue)"],...bulkEligibleFields().map(f=>[f.id,"Champ : "+f.label])];
+  const policies=bulkColumnPolicies(state.mapping,state.columnPolicies);
+  const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les colonnes-clés servent au rapprochement. Chaque colonne de données dispose de sa propre règle de mise à jour ; une adresse complète peut être séparée automatiquement.</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select><select data-bulk-policy="'+i+'" aria-label="Action pour '+attr(header||("colonne "+(i+1)))+'" '+(!state.mapping[i]||state.mapping[i].startsWith("match_")?"disabled":"")+'>'+bulkOptions([["ignore","Ignorer"],["overwrite","Remplir si différent mais non vide"],["empty","Remplir si vide"]],policies[i])+'</select></label>').join("")+'</div></section>':"";
   const preview=state.preview&&state.mode==="excel"?bulkPreviewHtml(state.preview):"";
   return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV. Le fichier est analysé dans votre navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
     (state.file?'<p><strong>'+bulkEscape(state.file.name)+'</strong> · '+bulkEscape(state.sheet)+' · '+state.rows.length+' ligne(s)</p>':"")+'</div>'+
-    (state.headers.length?'<section class="bulk-contact-card"><h4>2. Critère de rapprochement</h4><label>Identification par <select data-bulk-match>'+bulkOptions([["city","Nom + prénom + commune"],["birth","Nom + prénom + date de naissance"]],state.matchMode)+'</select></label><p>Si plusieurs fiches correspondent ou si une ligne est introuvable, elle est ignorée. Aucun rapprochement approximatif.</p></section>':"")+
+    (state.headers.length?'<section class="bulk-contact-card"><h4>2. Critère de rapprochement</h4><label>Identification par <select data-bulk-match>'+bulkOptions([["city","Nom + prénom + commune"],["birth","Nom + prénom + date de naissance"]],state.matchMode)+'</select></label><p>Les correspondances ambiguës et les doublons sont ignorés.</p><label class="check-line"><input type="checkbox" data-bulk-create '+(state.createMissing?"checked":"")+' /> Créer les fiches sans correspondance et renseigner leurs colonnes</label></section>':"")+
     map+(state.headers.length?'<button type="button" class="primary-action" data-bulk-preview>Prévisualiser les changements</button>':"")+preview;
 }
 function bulkTagPanel() {
@@ -238,7 +239,7 @@ function bulkPreviewHtml(preview) {
 }
 function renderBulkContactUpdates() {
   const s=bulkContactUpdate;
-  return '<section class="contact-io-workspace bulk-contact-workspace"><header class="contact-io-workspace-head"><div><h3>Mise à jour de fiches</h3><p>Mise à jour massive avec rapprochement strict et prévisualisation. Aucun contact créé, aucune donnée effacée sans action explicite.</p></div></header>'+
+  return '<section class="contact-io-workspace bulk-contact-workspace"><header class="contact-io-workspace-head"><div><h3>Mise à jour de fiches</h3><p>Mise à jour massive avec rapprochement strict et prévisualisation. Création optionnelle des contacts absents ; prévisualisation avant tout enregistrement.</p></div></header>'+
     '<div class="bulk-contact-modes"><button type="button" data-bulk-mode="excel" class="'+(s.mode==="excel"?"is-active":"")+'">À partir d’un Excel</button><button type="button" data-bulk-mode="tags" class="'+(s.mode==="tags"?"is-active":"")+'">Mots-clés en masse</button></div>'+
     bulkScopeSelector()+(s.error?'<p class="bulk-contact-error" role="alert">'+bulkEscape(s.error)+'</p>':"")+
     (s.lastResult?'<p class="bulk-contact-success" role="status">'+bulkEscape(s.lastResult)+'</p>':"")+
@@ -286,11 +287,13 @@ if(typeof document!=="undefined"){
       bulkContactUpdate.error="";bulkContactUpdate.preview=null;bulkContactUpdate.file=null;
       try {
         const sheet=await bulkReadExcel(file);
-        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers)});
+        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers),columnPolicies:[]});
       } catch(error) {bulkContactUpdate.error=error.message||"Lecture impossible.";}
       renderAdmin();return;
     }
     if(t.matches("[data-bulk-column]")){bulkContactUpdate.mapping[Number(t.dataset.bulkColumn)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-policy]")){bulkContactUpdate.columnPolicies[Number(t.dataset.bulkPolicy)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-create]")){bulkContactUpdate.createMissing=t.checked;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-scope]")){bulkContactUpdate.scope=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
@@ -306,7 +309,7 @@ if(typeof document!=="undefined"){
         if(!s.rows.length)throw new Error("Chargez un fichier d'abord.");
         const contacts=bulkScopeContacts(s.scope,s.listId);
         if(!contacts.length)throw new Error("Le périmètre choisi ne contient aucun contact.");
-        s.preview=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts);
+        s.preview=bulkEvaluateExcel(s.rows,s.mapping,s.matchMode,contacts,{createMissing:s.createMissing,policies:s.columnPolicies,allContacts:adminState.localContacts});
       }catch(error){s.error=error.message;}
       renderAdmin();return;
     }
