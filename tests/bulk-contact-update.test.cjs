@@ -82,4 +82,35 @@ assert.deepEqual(Array.from(context.bulkColumnPolicies(["match_firstName","phone
 assert.equal(context.bulkAddressParts("12 bis avenue de la Liberté").number,"12 bis");
 assert.equal(context.bulkAddressParts("5 allée du berneuil").street,"allée du berneuil");
 
+
+const keywordContext={
+  ...context,
+  adminState:{localContacts:[first,second]},
+  contactKeywordValues:contact=>Array.from(new Set([...(contact.keywords||[]),...(contact.tags||[])]))
+};
+vm.createContext(keywordContext);
+vm.runInContext(src,keywordContext);
+const importLabels=keywordContext.bulkImportKeywordSelection(["Import novembre","Import novembre"],"nouveau, bénévole");
+assert.equal(importLabels.length,3,"Les mots-clés importés doivent être dédupliqués");
+const bulkRows=[["Dupont","Jean","02/01/1980","nouveau"],["Martin","Alice","03/04/1995","0600000000"]];
+const bulkMap=["match_lastName","match_firstName","match_birthDate","phone"];
+const candidate=keywordContext.bulkEvaluateExcel(bulkRows,bulkMap,"birth",[first,second],{createMissing:true,allContacts:[first,second]});
+const enriched=keywordContext.bulkApplyImportKeywords(candidate,importLabels);
+assert.equal(enriched.items.length,1);
+assert.equal(enriched.creates.length,1);
+assert.deepEqual(Array.from(enriched.items[0].changes.keywords),["maire","Import novembre","nouveau","bénévole"]);
+assert.deepEqual(Array.from(enriched.creates[0].contact.keywords),["Import novembre","nouveau","bénévole"]);
+assert.equal(enriched.creates[0].contact.lastName,"Martin");
+const existingUnchanged=keywordContext.bulkEvaluateExcel([["Dupont","Jean","02/01/1980","ancien"]],bulkMap,"birth",[first,second],{createMissing:false,allowKeywords:true,allContacts:[first,second]});
+const withKeyword=keywordContext.bulkApplyImportKeywords(existingUnchanged,["suivi"]);
+assert.equal(withKeyword.items.length,1,"Une fiche inchangée doit recevoir un mot-clé choisi");
+assert.equal(withKeyword.items[0].changes.keywords.includes("suivi"),true);
+const deceased={...first,keywords:["décès"],tags:["décès"]};
+const deceasedContext={...keywordContext,adminState:{localContacts:[deceased]}};
+vm.createContext(deceasedContext);vm.runInContext(src,deceasedContext);
+const deceasedPreview=deceasedContext.bulkEvaluateExcel([["Dupont","Jean","02/01/1980","ancien"]],bulkMap,"birth",[deceased],{createMissing:false,allowKeywords:true,allContacts:[deceased]});
+const deceasedTagged=deceasedContext.bulkApplyImportKeywords(deceasedPreview,["suivi"]);
+assert.equal(deceasedTagged.items.length,0,"Le mot-clé décès est exclusif");
+console.log("Import Excel : mots-clés sur fiches créées, modifiées et inchangées OK");
+
 console.log("Mise à jour de fiches : correspondances, créations, adresses et politiques OK");
