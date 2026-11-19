@@ -7028,6 +7028,9 @@ async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal,
         await nextFrame();
       }
     }
+    if(knownDeleted&&ids.length!==knownDeleted.size){
+      throw new Error("La sélection a changé : "+(knownDeleted.size-ids.length)+" fiche(s) introuvable(s). Actualisez et recommencez.");
+    }
     if(!ids.length){
       contactDeletionProgress=null;
       showToast("Aucun contact à supprimer : sélection vide ou périmètre modifié.");
