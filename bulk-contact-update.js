@@ -1,5 +1,5 @@
 /* Mise à jour de fiches — prévisualisation obligatoire, aucune création ni fusion automatique. */
-const bulkContactUpdate = { mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, busy: false, error: "", lastResult: "" };
+const bulkContactUpdate = { mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, createMissing: true, columnPolicies: [], busy: false, error: "", lastResult: "" };
 
 function bulkNormalize(value) {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[’']/g," ").replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
@@ -53,42 +53,84 @@ function bulkScopeContacts(scope, listId) {
   }
   return [];
 }
-function bulkEvaluateExcel(rows, mapping, mode, scopeContacts) {
-  const keys = bulkColumns([],mode,mapping);
-  const fields = new Map(bulkEligibleFields().map(f=>[f.id,f]));
-  const updates = mapping.map((id,i)=>fields.has(id)?[i,fields.get(id)]:null).filter(Boolean);
-  if(!updates.length)throw new Error("Associez au moins une colonne à un champ à mettre à jour.");
-  if(new Set(updates.map(item=>item[1].id)).size!==updates.length)throw new Error("Chaque champ à modifier ne peut être associé qu'à une seule colonne.");
-  const index=new Map();
-  scopeContacts.forEach(contact=>bulkContactKey(contact,mode).forEach(key=>{
-    if(!index.has(key))index.set(key,[]);
-    if(!index.get(key).some(c=>c.id===contact.id))index.get(key).push(contact);
-  }));
-  const items=[],rejected=[],usedIds=new Set(),errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0};
+
+function bulkAddressParts(input) {
+  const raw=String(input??"").trim().replace(/\s+/g," ");
+  if(!raw)return {number:"",street:""};
+  const match=raw.match(/^(\d{1,5})(?:\s*[-,]?\s*(bis|ter|quater|[A-Z]))?(?:\s*[,.-]?\s+|\s*,\s*)(.+)$/i);
+  return match ? {number:match[1]+(match[2]?" "+match[2].toLowerCase():""),street:match[3].trim()} : {number:"",street:raw};
+}
+function bulkColumnPolicies(mapping,policies=[]) {
+  return mapping.map((id,i)=>id.startsWith("match_")||!id?"ignore":(["ignore","overwrite","empty"].includes(policies[i])?policies[i]:"overwrite"));
+}
+function bulkApplyValue(target,field,value,policy) {
+  if(!field||policy==="ignore"||value===""||value==null||(Array.isArray(value)&&!value.length))return;
+  const old=target[field],empty=old==null||String(old).trim()===""||(Array.isArray(old)&&!old.length);
+  if(policy==="empty"&&!empty)return;
+  if(JSON.stringify(old??"")!==JSON.stringify(value))target[field]=value;
+}
+function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
+  const keys=bulkColumns([],mode,mapping),fields=new Map(bulkEligibleFields().map(f=>[f.id,f]));
+  const policies=bulkColumnPolicies(mapping,options.policies||[]);
+  const updates=mapping.map((id,i)=>(id==="address_auto"||fields.has(id))&&policies[i]!=="ignore"?{col:i,id,policy:policies[i]}:null).filter(Boolean);
+  if(!updates.length)throw new Error("Associez au moins une colonne à renseigner avec une action active.");
+  if(new Set(updates.map(item=>item.id)).size!==updates.length)throw new Error("Un même champ est associé à plusieurs colonnes.");
+  if(updates.some(item=>item.id==="address_auto")&&updates.some(item=>["streetNumber","streetName","streetNameFull"].includes(item.id)))throw new Error("Ne combinez pas l'adresse complète et ses colonnes séparées.");
+  const allContacts=options.allContacts||scopeContacts,index=new Map(),globalIndex=new Map();
+  const add=(map,contact)=>bulkContactKey(contact,mode).forEach(key=>{
+    if(!map.has(key))map.set(key,[]);
+    if(!map.get(key).some(c=>c.id===contact.id))map.get(key).push(contact);
+  });
+  scopeContacts.forEach(c=>add(index,c));
+  allContacts.filter(c=>c.entityType!=="institution").forEach(c=>add(globalIndex,c));
+  const items=[],creates=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
+  const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
+  const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
+  const usedIds=new Set(allContacts.map(c=>c.id));
   rows.forEach((row,i)=>{
     if(!row.some(v=>String(v??"").trim()))return;
-    const key=bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode);
-    if(!key){errors.invalid++;rejected.push({row:i+2,reason:"Identité incomplète"});return;}
+    const key=rowKeys[i],line=i+2;
+    const reject=(reason,type)=>{errors[type]++;rejected.push({row:line,reason});};
+    if(!key){reject("Identité incomplète","invalid");return;}
+    if(occurrences.get(key)>1){reject("Identité dupliquée dans le fichier","duplicate");return;}
     const matches=index.get(key)||[];
-    if(!matches.length){errors.unmatched++;rejected.push({row:i+2,reason:"Aucune fiche correspondante"});return;}
-    if(matches.length!==1){errors.ambiguous++;rejected.push({row:i+2,reason:"Plusieurs fiches correspondent"});return;}
-    const contact=matches[0];
-    if(usedIds.has(contact.id)){errors.duplicate++;rejected.push({row:i+2,reason:"Contact présent plusieurs fois dans le fichier"});const previous=items.findIndex(item=>item.id===contact.id);if(previous>=0){const earlier=items[previous];items.splice(previous,1);rejected.push({row:earlier.row,reason:"Contact présent plusieurs fois dans le fichier"});errors.duplicate++;}return;}
-    usedIds.add(contact.id);
-    const changes={};
-    for(const [col,field] of updates){
-      const raw=String(row[col]??"").trim();
-      if(!raw)continue; // Les cellules vides ne suppriment aucune donnée.
-      const value=field.type==="date" ? bulkDate(raw) : parseContactImportValue(raw,field);
-      if(field.type==="date"&&!value){errors.invalid++;continue;}
-      if(field.type==="number"&&!Number.isFinite(value)){errors.invalid++;continue;}
-      if(field.type==="boolean" && !/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw)){errors.invalid++;continue;}
-      if(JSON.stringify(contact[field.id]??"")!==JSON.stringify(value))changes[field.id]=value;
+    if(matches.length>1){reject("Plusieurs fiches correspondent","ambiguous");return;}
+    if(!matches.length&&(globalIndex.get(key)||[]).length){reject("Fiche existante hors du périmètre choisi","outsideScope");return;}
+    const creating=!matches.length;
+    if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");return;}
+    const original=creating?{
+      id:"",firstName:String(row[keys.firstName]??"").trim(),lastName:String(row[keys.lastName]??"").trim(),
+      [mode==="birth"?"birthDate":"city"]:mode==="birth"?bulkDate(row[keys.birthDate]):String(row[keys.city]??"").trim(),
+      keywords:[],tags:[],comments:[]
+    }:matches[0];
+    const candidate={...original};let invalid=false;
+    for(const update of updates){
+      const raw=String(row[update.col]??"").trim();
+      if(!raw)continue;
+      if(update.id==="address_auto"){
+        const address=bulkAddressParts(raw);
+        bulkApplyValue(candidate,"streetNumber",address.number,update.policy);
+        bulkApplyValue(candidate,"streetName",address.street,update.policy);
+        bulkApplyValue(candidate,"streetNameFull",address.street,update.policy);
+        continue;
+      }
+      const field=fields.get(update.id);
+      const value=field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
+      if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
+      bulkApplyValue(candidate,field.id,value,update.policy);
     }
-    if(Object.keys(changes).length)items.push({id:contact.id,name:contactDisplayName(contact),row:i+2,changes});
-    else errors.unchanged++;
+    if(invalid){reject("Valeur de colonne invalide","invalid");return;}
+    if(creating){
+      const now=new Date().toISOString();
+      const contact=normalizeContactRecord({...candidate,createdAt:now,updatedAt:now},usedIds);
+      creates.push({id:contact.id,name:contactDisplayName(contact),row:line,contact});
+    }else{
+      const changes=Object.fromEntries(Object.keys(candidate).filter(id=>JSON.stringify(candidate[id])!==JSON.stringify(original[id])).map(id=>[id,candidate[id]]));
+      if(Object.keys(changes).length)items.push({id:original.id,name:contactDisplayName(original),row:line,changes});
+      else errors.unchanged++;
+    }
   });
-  return {items,errors,rejected,sourceRows:rows.length,scopeCount:scopeContacts.length};
+  return {items,creates,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
 }
 function bulkApplyTags(contacts,add,remove) {
   const addIds=new Set(add.map(v=>bulkNormalize(v))),removeIds=new Set(remove.map(v=>bulkNormalize(v)));
