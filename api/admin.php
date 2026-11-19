@@ -715,6 +715,70 @@ function write_admin_entity_updates(array $updates, array $user, string $operati
  * Réparation ciblée de champs texte : chaque remplacement exige la valeur source
  * exacte encore présente en base. Les identifiants et références ne sont jamais mutés.
  */
+/**
+ * Correction collective de valeurs textuelles identiques : chaque lot est atomique.
+ * Le nombre d'occurrences attendu doit correspondre exactement à l'état actuel.
+ * On ne corrige jamais les identifiants, e-mails, mots-clés ni les liens.
+ */
+function repair_admin_contact_groups(array $groups,array $user): array
+{
+    if(!can_administer($user))json_response(['ok'=>false,'error'=>'Action réservée aux administrateurs.'],403);
+    if(!$groups||count($groups)>15)json_response(['ok'=>false,'error'=>'Un lot de groupes doit contenir de 1 à 15 valeurs.'],400);
+    $denied=array_fill_keys(['id','keywords','tags','email','mobile','phone','telephone','birthDate','createdAt','updatedAt','gender','deathDateApprox','institutionId','contactId','externalId'],true);
+    $normalized=[];
+    foreach($groups as $group){
+        if(!is_array($group))json_response(['ok'=>false,'error'=>'Groupe invalide.'],400);
+        $field=$group['field']??null;$from=$group['from']??null;$to=$group['to']??null;$expected=$group['expected']??null;
+        if(!is_string($field)||!preg_match('/^[A-Za-z][A-Za-z0-9_]{0,63}$/D',$field)||isset($denied[$field])||
+           !is_string($from)||!is_string($to)||$to===''||$to===$from||
+           strlen($from)>1500||strlen($to)>1500||strpos($to,"\xEF\xBF\xBD")!==false||
+           !is_int($expected)||$expected<1||$expected>300000){
+           json_response(['ok'=>false,'error'=>'Champ ou valeur de groupe invalide.'],400);
+        }
+        $key=$field."\0".$from;
+        if(isset($normalized[$key]))json_response(['ok'=>false,'error'=>'Groupe dupliqué dans le lot.'],400);
+        $normalized[$key]=['field'=>$field,'from'=>$from,'to'=>$to,'expected'=>$expected,'actual'=>0];
+    }
+    ensure_admin_state_table();
+    $db=db();$db->beginTransaction();
+    try{
+        $query=$db->query('SELECT state_json FROM admin_state WHERE id = 1 FOR UPDATE');
+        $json=$query->fetchColumn();
+        if(!is_string($json))throw new RuntimeException('Base administrative introuvable.');
+        $state=json_decode($json,true,512,JSON_THROW_ON_ERROR);unset($json,$query);
+        if(!is_array($state['localContacts']??null))throw new RuntimeException('Contacts invalides.');
+        $fields=[];
+        foreach($normalized as $group)$fields[$group['field']]=true;
+        foreach($state['localContacts'] as &$contact){
+            if(!is_array($contact)||($contact['entityType']??'')==='institution')continue;
+            foreach($fields as $field=>$_){
+                $value=$contact[$field]??null;
+                if(!is_string($value))continue;
+                $key=$field."\0".$value;
+                if(!isset($normalized[$key]))continue;
+                $contact[$field]=$normalized[$key]['to'];
+                $normalized[$key]['actual']++;
+            }
+        }
+        unset($contact);
+        $count=0;
+        foreach($normalized as $group){
+            if($group['expected']!==$group['actual']){
+                throw new RuntimeException('Des fiches ont changé depuis le diagnostic ('.$group['field'].'). Actualisez le diagnostic avant de réessayer.');
+            }
+            $count+=$group['actual'];
+        }
+        append_activity($state,$user,'réparation','contacts',$count.' champ(s) corrigé(s) par groupes');
+        $save=$db->prepare('UPDATE admin_state SET state_json = ?, updated_at = NOW() WHERE id = 1');
+        $save->execute([admin_json_encode($state)]);
+        $db->commit();
+        return ['repaired'=>$count];
+    }catch(Throwable $error){
+        if($db->inTransaction())$db->rollBack();
+        throw $error;
+    }
+}
+
 function repair_admin_contact_fields(array $changes, array $user): array
 {
     if (!can_administer($user)) json_response(['ok' => false, 'error' => 'Action réservée aux administrateurs.'], 403);
@@ -939,12 +1003,19 @@ $data = request_json();
 $operation = clean_string($data['operation'] ?? '', 80);
 $target = clean_string($data['target'] ?? 'administration', 120);
 $detail = clean_string($data['detail'] ?? '', 500);
+$repairContactGroups = $data['repairContactGroups'] ?? null;
 $repairContactFields = $data['repairContactFields'] ?? null;
 $deleteContactIds = $data['deleteContactIds'] ?? null;
 $entityUpdates = $data['entityUpdates'] ?? null;
 $changes = $data['changes'] ?? null;
 $state = $data['state'] ?? null;
 unset($data);
+
+if ($repairContactGroups !== null) {
+    if (!is_array($repairContactGroups)) json_response(['ok'=>false,'error'=>'Groupes de réparation invalides.'],400);
+    $result=repair_admin_contact_groups($repairContactGroups,$user);
+    json_response(['ok'=>true,'verified'=>true,'repaired'=>$result['repaired'],'version'=>state_version('admin_state')]);
+}
 
 if ($repairContactFields !== null) {
     if (!is_array($repairContactFields)) json_response(['ok' => false, 'error' => 'Lot de corrections invalide.'], 400);
