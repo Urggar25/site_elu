@@ -706,6 +706,121 @@ function write_admin_entity_updates(array $updates, array $user, string $operati
     }
 }
 
+/**
+ * Suppression par identifiants exécutée sur l'état courant, dans une transaction.
+ * Contrairement à une sauvegarde complète de localContacts depuis le navigateur,
+ * cette action ne peut pas réintroduire des contacts par un instantané périmé.
+ */
+function delete_admin_contacts_by_ids(array $submittedIds, array $user): array
+{
+    if (!can_administer($user)) {
+        json_response(['ok' => false, 'error' => 'Suppression réservée aux administrateurs.'], 403);
+    }
+    if (!$submittedIds || count($submittedIds) > 300000) {
+        json_response(['ok' => false, 'error' => 'Sélection vide ou trop importante.'], 400);
+    }
+    $ids = [];
+    foreach ($submittedIds as $id) {
+        if (!is_string($id) || $id === '' || strlen($id) > 160) {
+            json_response(['ok' => false, 'error' => 'Identifiant de contact invalide.'], 400);
+        }
+        $ids[$id] = true;
+    }
+    if (count($ids) !== count($submittedIds)) {
+        json_response(['ok' => false, 'error' => 'Sélection contenant des identifiants en double.'], 400);
+    }
+    ensure_admin_state_table();
+    $database = db();
+    $database->beginTransaction();
+    try {
+        $statement = $database->query('SELECT state_json FROM admin_state WHERE id = 1 FOR UPDATE');
+        $raw = $statement->fetchColumn();
+        if (!is_string($raw)) {
+            throw new RuntimeException('Base de contacts introuvable.');
+        }
+        $state = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        unset($raw, $statement);
+        if (!is_array($state) || !is_array($state['localContacts'] ?? null)) {
+            throw new RuntimeException('Format de la base de contacts invalide.');
+        }
+        $found = [];
+        $remaining = [];
+        foreach ($state['localContacts'] as $contact) {
+            $id = is_array($contact) ? ($contact['id'] ?? '') : '';
+            if (is_string($id) && isset($ids[$id])) {
+                if (($contact['entityType'] ?? '') === 'institution') {
+                    throw new RuntimeException('La sélection contient une fiche institutionnelle.');
+                }
+                $found[$id] = true;
+            } else {
+                $remaining[] = $contact;
+            }
+        }
+        if (count($found) !== count($ids)) {
+            throw new RuntimeException('La sélection n’est plus à jour : ' . (count($ids) - count($found)) . ' contact(s) absent(s). Actualisez la recherche puis recommencez.');
+        }
+        $state['localContacts'] = $remaining;
+        unset($remaining);
+        foreach (['institutions', 'permanenceRequests', 'teamTasks', 'calendarEvents', 'campaignEvents', 'savedContactSearches', 'deathCases'] as $collection) {
+            if (!is_array($state[$collection] ?? null)) $state[$collection] = [];
+        }
+        foreach ($state['institutions'] as &$item) {
+            if (isset($ids[$item['mayorContactId'] ?? ''])) $item['mayorContactId'] = '';
+            if (isset($ids[$item['legacyContactId'] ?? ''])) $item['legacyContactId'] = '';
+            $item['deputyContactIds'] = array_values(array_filter($item['deputyContactIds'] ?? [], static fn($id) => !isset($ids[$id])));
+        }
+        unset($item);
+        foreach ($state['permanenceRequests'] as &$item) {
+            if (isset($ids[$item['contactId'] ?? ''])) $item['contactId'] = '';
+        }
+        unset($item);
+        foreach ($state['teamTasks'] as &$item) {
+            if (isset($ids[$item['linkedContactId'] ?? ''])) $item['linkedContactId'] = '';
+        }
+        unset($item);
+        foreach ($state['calendarEvents'] as &$item) {
+            $item['contactIds'] = array_values(array_filter($item['contactIds'] ?? [], static fn($id) => !isset($ids[$id])));
+            foreach (($item['attendanceByDate'] ?? []) as $day => $rows) {
+                $item['attendanceByDate'][$day] = array_values(array_filter(is_array($rows) ? $rows : [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
+            }
+        }
+        unset($item);
+        foreach ($state['campaignEvents'] as &$item) {
+            $item['participants'] = array_values(array_filter($item['participants'] ?? [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
+        }
+        unset($item);
+        foreach ($state['savedContactSearches'] as &$item) {
+            foreach (['includeIds', 'excludeIds', 'snapshotIds'] as $field) {
+                if (is_array($item[$field] ?? null)) {
+                    $item[$field] = array_values(array_filter($item[$field], static fn($id) => !isset($ids[$id])));
+                }
+            }
+        }
+        unset($item);
+        foreach ($state['deathCases'] as &$item) {
+            if (isset($ids[$item['deceasedId'] ?? ''])) $item['deceasedId'] = '';
+            $item['relatives'] = array_values(array_filter($item['relatives'] ?? [], static fn($row) => !isset($ids[$row['contactId'] ?? ''])));
+        }
+        unset($item);
+        append_activity($state, $user, 'suppression', 'contacts', count($ids) . ' contact(s) supprimé(s) en base');
+        $expectedRemaining = count($state['localContacts']);
+        $json = admin_json_encode($state);
+        unset($state);
+        $save = $database->prepare('UPDATE admin_state SET state_json = ?, updated_at = NOW() WHERE id = 1');
+        $save->execute([$json]);
+        unset($json);
+        $check = $database->query('SELECT JSON_LENGTH(JSON_EXTRACT(state_json, "$.localContacts")) FROM admin_state WHERE id = 1');
+        if ((int)$check->fetchColumn() !== $expectedRemaining) {
+            throw new RuntimeException('Vérification de suppression échouée : transaction annulée.');
+        }
+        $database->commit();
+        return ['deleted' => count($ids), 'remaining' => $expectedRemaining];
+    } catch (Throwable $error) {
+        if ($database->inTransaction()) $database->rollBack();
+        throw $error;
+    }
+}
+
 $user = require_moderator();
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -755,10 +870,19 @@ $data = request_json();
 $operation = clean_string($data['operation'] ?? '', 80);
 $target = clean_string($data['target'] ?? 'administration', 120);
 $detail = clean_string($data['detail'] ?? '', 500);
+$deleteContactIds = $data['deleteContactIds'] ?? null;
 $entityUpdates = $data['entityUpdates'] ?? null;
 $changes = $data['changes'] ?? null;
 $state = $data['state'] ?? null;
 unset($data);
+
+if ($deleteContactIds !== null) {
+    if (!is_array($deleteContactIds)) {
+        json_response(['ok' => false, 'error' => 'La sélection doit être une liste.'], 400);
+    }
+    $result = delete_admin_contacts_by_ids($deleteContactIds, $user);
+    json_response(['ok' => true, 'verified' => true, 'deleted' => $result['deleted'], 'remaining' => $result['remaining'], 'version' => state_version('admin_state')]);
+}
 
 if (is_array($entityUpdates)) {
     write_admin_entity_updates($entityUpdates, $user, $operation, $target, $detail);

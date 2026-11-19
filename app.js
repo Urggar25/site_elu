@@ -5011,30 +5011,21 @@ function renderContacts() {
 
 function renderContactDeletionProgress() {
   const progress = contactDeletionProgress || {};
+  const phase = progress.phase || "selecting";
   const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
-  return `<section class="contact-delete-progress" role="status" aria-live="polite">
-    <div class="contact-delete-ring" style="--progress:${percent * 3.6}deg"><span>${percent}%</span></div>
-    <div>
-      <h3>Suppression en cours</h3>
-      <p>${text(progress.deleted || 0)} / ${text(progress.total || 0)} ${text(progress.label || "contacts")} supprime(s)</p>
-    </div>
-  </section>`;
+  const label = phase === "saving" ? "Sauvegarde en base — confirmation du serveur attendue" : phase === "done" ? "Suppression confirmée en base" : phase === "error" ? "Suppression non confirmée" : "Préparation de la sélection";
+  const detail = phase === "saving" ? progress.total+" contact(s) en cours de suppression sur le serveur" :
+    phase === "done" ? progress.deleted+" contact(s) supprimé(s) et vérifié(s) en base" :
+    phase === "error" ? String(progress.message || "Vérifiez l'état de la base avant de réessayer.") :
+    progress.scanned+" / "+progress.sourceCount+" contacts vérifiés";
+  return '<section class="contact-delete-progress contact-delete-'+phase+'" role="status" aria-live="polite">'+
+    '<div class="contact-delete-ring" style="--progress:'+percent*3.6+'deg"><span>'+(phase==="saving"?"…":phase==="error"?"!":percent+"%")+'</span></div>'+
+    '<div><h3>'+text(label)+'</h3><p>'+text(detail)+'</p></div></section>';
 }
-
 function updateContactDeletionProgressDom() {
-  const progress = contactDeletionProgress;
-  if (!progress) return;
-  const root = document.querySelector(".contact-delete-progress");
-  if (!root) return;
-  const percent = Math.max(0, Math.min(100, Number(progress.percent) || 0));
-  const ring = root.querySelector(".contact-delete-ring");
-  const percentText = root.querySelector(".contact-delete-ring span");
-  const detail = root.querySelector("p");
-  if (ring) ring.style.setProperty("--progress", `${percent * 3.6}deg`);
-  if (percentText) percentText.textContent = `${percent}%`;
-  if (detail) detail.textContent = `${progress.deleted || 0} / ${progress.total || 0} ${progress.label || "contacts"} supprime(s)`;
+  const root=document.querySelector(".contact-delete-progress");
+  if(root && contactDeletionProgress)root.outerHTML=renderContactDeletionProgress();
 }
-
 let contactIoTab = "import";
 function renderContactImportExport() {
   const tab = ["import", "export", "create", "update"].includes(contactIoTab) ? contactIoTab : "import";
@@ -7009,71 +7000,95 @@ async function deleteContactsWithProgress(ids, label = "contacts") {
   const targetIds = [...new Set(ids)].filter(Boolean);
   if (!targetIds.length) return;
   const deleted = new Set(targetIds);
-  await deleteContactsByMatcherWithProgress((contact) => deleted.has(contact.id), targetIds.length, label, deleted);
+  return await deleteContactsByMatcherWithProgress((contact) => deleted.has(contact.id), targetIds.length, label, deleted);
 }
 
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+let contactDeletionBusy = false;
 async function deleteContactsByMatcherWithProgress(shouldDelete, estimatedTotal, label = "contacts", knownDeleted = null) {
-  const total = Math.max(0, Number(estimatedTotal) || 0);
-  if (!total) return;
-  const source = adminState.localContacts;
-  const kept = [];
-  const deletedIds = knownDeleted || new Set();
-  let deletedCount = 0;
-  contactDeletionProgress = { deleted: 0, total, percent: 0, label };
-  activeAdminSection = "contacts";
+  if(contactDeletionBusy){showToast("Une suppression est déjà en cours.");return false;}
+  const source=adminState.localContacts;
+  const ids=[];
+  const sourceCount=source.length;
+  contactDeletionBusy=true;
+  contactDeletionProgress={phase:"selecting",scanned:0,sourceCount,deleted:0,total:estimatedTotal,percent:0,label};
+  activeAdminSection="contacts";
   renderAdmin();
   await nextFrame();
-
-  for (let index = 0; index < source.length; index += 1) {
-    const contact = source[index];
-    if (shouldDelete(contact)) {
-      deletedCount += 1;
-      if (!knownDeleted) deletedIds.add(contact.id);
-    } else {
-      kept.push(contact);
+  try{
+    for(let i=0;i<sourceCount;i++){
+      const contact=source[i];
+      if(contact.entityType!=="institution"&&shouldDelete(contact))ids.push(contact.id);
+      if(i%5000===0||i===sourceCount-1){
+        contactDeletionProgress={phase:"selecting",scanned:i+1,sourceCount,deleted:0,total:ids.length,percent:Math.round(100*(i+1)/sourceCount),label};
+        updateContactDeletionProgressDom();
+        await nextFrame();
+      }
     }
-    if (index % 5000 === 0 || deletedCount === total) {
-      contactDeletionProgress = {
-        deleted: deletedCount,
-        total,
-        percent: Math.min(100, Math.round((deletedCount / total) * 100)),
-        label
-      };
-      updateContactDeletionProgressDom();
-      await nextFrame();
+    if(knownDeleted&&ids.length!==knownDeleted.size){
+      throw new Error("La sélection a changé : "+(knownDeleted.size-ids.length)+" fiche(s) introuvable(s). Actualisez et recommencez.");
     }
+    if(!ids.length){
+      contactDeletionProgress=null;
+      showToast("Aucun contact à supprimer : sélection vide ou périmètre modifié.");
+      renderAdmin();
+      return false;
+    }
+    // Ne JAMAIS retirer les fiches localement avant la confirmation de l'écriture en base.
+    contactDeletionProgress={phase:"saving",scanned:sourceCount,sourceCount,deleted:0,total:ids.length,percent:0,label};
+    updateContactDeletionProgressDom();
+    adminSyncStatus="saving";
+    adminSyncMessage="Suppression en base en cours…";
+    await nextFrame();
+    const response=await adminApiRequest("POST",{
+      operation:"suppression",
+      target:"contacts",
+      detail:ids.length+" contact(s) sélectionné(s)",
+      deleteContactIds:ids
+    });
+    if(response.verified!==true||response.deleted!==ids.length){
+      throw new Error("Le serveur n'a pas confirmé la suppression de tous les contacts.");
+    }
+    const deletedIds=new Set(ids);
+    adminState.localContacts=adminState.localContacts.filter(contact=>!deletedIds.has(contact.id));
+    clearDeletedContactReferences(deletedIds);
+    clearContactSelection();
+    if(deletedIds.has(selectedContactId))selectedContactId="";
+    resetContactLookupCaches();
+    addActivity("suppression", "contacts", ids.length+" contact(s) supprimé(s) en base");
+    adminSyncStatus="synced";
+    adminSyncMessage=ids.length+" contact(s) supprimé(s) et confirmés par le serveur.";
+    contactDeletionProgress={phase:"done",scanned:sourceCount,sourceCount,deleted:ids.length,total:ids.length,percent:100,label};
+    stateSyncChannel?.postMessage({type:"admin",version:adminStateVersion});
+    renderAdmin();
+    showToast(adminSyncMessage);
+    return true;
+  }catch(error){
+    const message=error?.message||"Erreur inconnue de suppression.";
+    adminSyncStatus="error";
+    adminSyncMessage="Suppression non confirmée : "+message;
+    contactDeletionProgress={phase:"error",scanned:0,sourceCount,deleted:0,total:0,percent:0,message:adminSyncMessage,label};
+    updateContactDeletionProgressDom();
+    showToast(adminSyncMessage);
+    // La requête a pu réussir malgré une rupture réseau : recharger l'état du serveur.
+    await loadAdminStateFromApi();
+    return false;
+  }finally{
+    contactDeletionBusy=false;
   }
-
-  adminState.localContacts = kept;
-  clearDeletedContactReferences(deletedIds);
-  clearContactSelection();
-  if (deletedIds.has(selectedContactId)) selectedContactId = adminState.localContacts[0]?.id || "";
-  contactDeletionProgress = {
-    deleted: deletedCount,
-    total: deletedCount,
-    percent: 100,
-    label: "Sauvegarde en base"
-  };
-  updateContactDeletionProgressDom();
-  await nextFrame();
-  contactDeletionProgress = null;
-  saveAdminState("suppression", "contacts", `${deletedCount} contact(s) supprime(s)`);
 }
-
 async function deleteSelectedContactsFast(selectedCount = null) {
-  const filters = contactSearchFilters();
-  if (isAllFilteredContactSelectionActive(filters)) {
-    if(adminFilters.activeSavedContactSearchId){const current=normalizeSavedContactSearches(adminState.savedContactSearches).find(item=>item.id===adminFilters.activeSavedContactSearchId);if(current&&(current.sourceIds?.length||current.isSnapshot||["manual","hybrid"].includes(current.listType))){await deleteContactsWithProgress(filteredContacts().map(c=>c.id),"contacts de la liste");return;}}
-    const fieldsById = new Map(contactFields().map((field) => [field.id, field]));
-    const total = selectedCount === null ? filteredContacts(filters).length : selectedCount;
-    await deleteContactsByMatcherWithProgress((contact) => contact.entityType!=="institution" && (filters.includeDeceased||!isContactDeceased(contact)) && contactMatchesFilters(contact, filters, fieldsById), total, "contacts filtres");
-    return;
+  const filters=contactSearchFilters();
+  // Réutiliser exactement les résultats affichés, sans recalculer un prédicat
+  // susceptible de diverger de la sélection (recherches enregistrées, exclusions…).
+  if(isAllFilteredContactSelectionActive(filters)){
+    const ids=filteredContacts().map(contact=>contact.id);
+    return deleteContactsWithProgress(ids,"contacts filtrés");
   }
-  await deleteContactsWithProgress([...selectedContactIds], "contacts selectionnes");
+  return deleteContactsWithProgress([...selectedContactIds],"contacts sélectionnés");
 }
 
 function contactExportRows() {
@@ -9804,12 +9819,12 @@ document.addEventListener("click", async (event) => {
   }
 
   const deleteContact = event.target.closest("[data-delete-contact]");
-  if (deleteContact && isAdmin() && confirm("Confirmer la suppression du contact ?")) {
+  if (deleteContact && isAdmin() && !contactDeletionBusy && confirm("Confirmer la suppression du contact ?")) {
     await deleteContactsWithProgress([deleteContact.dataset.deleteContact], "contact");
   }
 
   const deleteSelectedContacts = event.target.closest("[data-delete-selected-contacts]");
-  if (deleteSelectedContacts && isAdmin()) {
+  if (deleteSelectedContacts && isAdmin() && !contactDeletionBusy) {
     const selectedCount = isAllFilteredContactSelectionActive(contactSearchFilters()) ? filteredContacts().length : selectedContactIds.size;
     if(selectedCount){
       const message="Supprimer définitivement "+selectedCount+" contact(s) ?\nCette opération supprime également leurs liens dans les événements, listes et dossiers associés.";
