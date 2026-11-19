@@ -11880,3 +11880,11 @@ body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact
 body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill.is-include{background:#e2efff;color:#14549c;border-color:#3479cc}
 body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill.is-exclude{background:#ffebe9;color:#a21d29;border-color:#d24b4b}
 body.admin-mode .contact-keyword-picker .contact-keyword-selected button.contact-keyword-pill:focus-visible{outline:3px solid #1d62b8;outline-offset:2px}
+
+.contact-delete-progress.contact-delete-saving{background:#eef5ff;border-color:#a8cbef;box-shadow:0 12px 24px rgba(21,77,140,.09)}
+.contact-delete-progress.contact-delete-saving .contact-delete-ring{background:conic-gradient(#2a70be 0deg 110deg,#bcd8f5 110deg 360deg);animation:contactDeletionSaving 1.5s linear infinite}
+.contact-delete-progress.contact-delete-done{background:#e8f8ee;border-color:#9cdbb4;box-shadow:0 12px 24px rgba(20,95,52,.08)}
+.contact-delete-progress.contact-delete-done .contact-delete-ring{background:#238f50}
+.contact-delete-progress.contact-delete-error{background:#fff1ed;border-color:#e9a59b}
+@keyframes contactDeletionSaving{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.contact-delete-progress.contact-delete-saving .contact-delete-ring{animation:none}}
