@@ -15,8 +15,13 @@ function bulkDate(value) {
   const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   return iso ? iso[1]+"-"+iso[2].padStart(2,"0")+"-"+iso[3].padStart(2,"0") : "";
 }
+// Les listes électorales peuvent contenir tous les prénoms : seul le premier est conservé.
+// Les prénoms composés avec trait d’union restent intacts (Jean-Pierre).
+function bulkFirstGivenName(value) {
+  return String(value ?? "").trim().split(/[,;\s]+/u)[0] || "";
+}
 function bulkKey(name, first, third, mode) {
-  const firstPart = bulkNormalize(name), secondPart = bulkNormalize(first);
+  const firstPart = bulkNormalize(name), secondPart = bulkNormalize(bulkFirstGivenName(first));
   const thirdPart = mode === "birth" ? bulkDate(third) : bulkNormalize(third);
   return firstPart && secondPart && thirdPart ? JSON.stringify([firstPart, secondPart, thirdPart]) : "";
 }
@@ -99,7 +104,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
     const creating=!matches.length;
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");return;}
     const original=creating?{
-      id:"",firstName:String(row[keys.firstName]??"").trim(),lastName:String(row[keys.lastName]??"").trim(),
+      id:"",firstName:bulkFirstGivenName(row[keys.firstName]),lastName:String(row[keys.lastName]??"").trim(),
       [mode==="birth"?"birthDate":"city"]:mode==="birth"?bulkDate(row[keys.birthDate]):String(row[keys.city]??"").trim(),
       keywords:[],tags:[],comments:[]
     }:matches[0];
@@ -115,7 +120,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
         continue;
       }
       const field=fields.get(update.id);
-      const value=field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
+      const value=field.id==="firstName"?bulkFirstGivenName(raw):field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
       if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
       bulkApplyValue(candidate,field.id,value,update.policy);
     }
