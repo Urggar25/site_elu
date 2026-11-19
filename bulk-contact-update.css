@@ -2,3 +2,15 @@
 .bulk-import-keywords{border-color:#b8cfef;background:linear-gradient(160deg,#f4f8ff,#fff 65%)}.bulk-import-keyword-choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;max-height:210px;overflow:auto;padding:10px;border:1px solid #d8e4f3;border-radius:10px;background:#fff}.bulk-import-keyword-choices label{display:flex;align-items:center;gap:9px;font-weight:500;cursor:pointer;font-size:.92rem;min-width:0;overflow-wrap:anywhere}.bulk-import-keyword-choices input{accent-color:#115ac5;flex:0 0 auto}.bulk-import-keywords input[type=text]{min-height:44px;border:1px solid #cbd6e1;border-radius:9px;padding:10px 12px;width:100%;box-sizing:border-box}.bulk-import-keywords>small{color:#52647c}.bulk-contact-preview .bulk-import-summary{padding:10px;border-radius:9px;background:#e7f3ff;color:#174878}
 
 .bulk-preview-progress{padding:13px 16px;border:1px solid #b7d1f0;border-radius:10px;background:#eef6ff;color:#12437a;font-weight:600;display:flex;align-items:center;gap:10px}.bulk-preview-progress:not([hidden])::before{content:"";width:18px;height:18px;border-radius:50%;border:3px solid #bad5f3;border-top-color:#1261bc;animation:bulkPreviewSpin .7s linear infinite}.bulk-preview-progress[hidden]{display:none}@keyframes bulkPreviewSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.bulk-preview-progress::before{animation:none}}
+
+.bulk-ambiguity-review{border-color:#c9d9ed;background:#fbfdff}
+.bulk-ambiguity-review h4{margin:0}
+.bulk-ambiguity-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(240px,2fr);gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid #dce5f0}
+.bulk-ambiguity-row>div{min-width:0;display:grid;gap:5px;overflow-wrap:anywhere}
+.bulk-ambiguity-row small{color:#52637a}
+.bulk-ambiguity-row label{display:grid;gap:7px;min-width:0;font-weight:600}
+.bulk-ambiguity-row select{width:100%;max-width:100%;min-height:44px}
+.bulk-ambiguity-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:8px}
+.bulk-ambiguity-actions button{min-height:42px}
+.bulk-ambiguity-actions button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:700px){.bulk-ambiguity-row{grid-template-columns:minmax(0,1fr)}.bulk-ambiguity-actions{align-items:stretch}.bulk-ambiguity-actions button{flex:1 1 150px}}
