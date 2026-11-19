@@ -5,7 +5,7 @@ const encodingRepairState={
   busy:false,error:"",message:"",lastVerified:0
 };
 const repairDeniedFields=new Set(["id","keywords","tags","email","mobile","phone","telephone","birthDate","createdAt","updatedAt","gender","deathDateApprox","institutionId","contactId","externalId"]);
-const repairMojibakePattern=/(?:Ã[\u0080-\u00BF©èª¯´‰±¼³®à¼Œœ]|Â[\u0080-\u00BF]|â[€œ€™“”¦€]|�)/u;
+const repairMojibakePattern=/(?:Ã.|Â.|â.|�)/u;
 const repairMojibakeSimple=/(?:Ã.|Â.|â[€œ€™“”¦€])/u;
 const repairCp1252Overrides={"€":128,"‚":130,"ƒ":131,"„":132,"…":133,"†":134,"‡":135,"ˆ":136,"‰":137,"Š":138,"‹":139,"Œ":140,"Ž":142,"‘":145,"’":146,"“":147,"”":148,"•":149,"–":150,"—":151,"˜":152,"™":153,"š":154,"›":155,"œ":156,"ž":158,"Ÿ":159};
 function repairDecodeOnce(input){
