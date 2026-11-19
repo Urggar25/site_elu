@@ -5,6 +5,7 @@ const vm = require("node:vm");
 const path = require("node:path");
 const src = fs.readFileSync(path.join(__dirname,"../bulk-contact-update.js"),"utf8");
 const fields=[
+  {id:"firstName",label:"Prénom",type:"text"},
   {id:"phone",label:"Téléphone",type:"text"},
   {id:"email",label:"Mail",type:"text"},
   {id:"city",label:"Commune",type:"text"},
@@ -111,6 +112,19 @@ vm.createContext(deceasedContext);vm.runInContext(src,deceasedContext);
 const deceasedPreview=deceasedContext.bulkEvaluateExcel([["Dupont","Jean","02/01/1980","ancien"]],bulkMap,"birth",[deceased],{createMissing:false,allowKeywords:true,allContacts:[deceased]});
 const deceasedTagged=deceasedContext.bulkApplyImportKeywords(deceasedPreview,["suivi"]);
 assert.equal(deceasedTagged.items.length,0,"Le mot-clé décès est exclusif");
+// Listes électorales : un seul prénom, pour le matching comme pour les nouvelles fiches.
+assert.equal(context.bulkFirstGivenName("MARIE LOUISE ANNE"),"MARIE");
+assert.equal(context.bulkFirstGivenName("Jean-Pierre Louis"),"Jean-Pierre");
+assert.equal(context.bulkFirstGivenName("  Élise, Jeanne  "),"Élise");
+const electoralMatch=evaluate([["Dupont","Jean Pierre André","02/01/1980","nouveau"]],["match_lastName","match_firstName","match_birthDate","phone"],"birth",[first,second]);
+assert.equal(electoralMatch.items.length,1,"Une liste électorale doit trouver le contact existant avec son premier prénom");
+assert.equal(electoralMatch.items[0].id,"first");
+const electoralCreation=evaluate([["MARTIN","Marie Louise Anne","Paris","0600000000"]],["match_lastName","match_firstName","match_city","phone"],"city",[],{createMissing:true,allContacts:[first,second]});
+assert.equal(electoralCreation.creates.length,1);
+assert.equal(electoralCreation.creates[0].contact.firstName,"Marie");
+const mappedFirstName=evaluate([["Dupont","Jean Pierre André","02/01/1980","Jean-Pierre Louis"]],["match_lastName","match_firstName","match_birthDate","firstName"],"birth",[first,second]);
+assert.equal(mappedFirstName.items[0].changes.firstName,"Jean-Pierre");
+console.log("Prénoms électoraux : premier prénom conservé, rapprochement et création OK");
 console.log("Import Excel : mots-clés sur fiches créées, modifiées et inchangées OK");
 
 console.log("Mise à jour de fiches : correspondances, créations, adresses et politiques OK");
