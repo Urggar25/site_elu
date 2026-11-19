@@ -220,11 +220,9 @@ function bulkCellColumn(ref){
   return col-1;
 }
 async function bulkReadExcel(file) {
-  if(file.size>12*1024*1024)throw new Error("Fichier trop volumineux (12 Mo maximum).");
   if(/\.csv$/i.test(file.name)) {
     const rows=parseCsv(await file.text());
     if(rows.length<2)throw new Error("CSV vide ou sans données.");
-    if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
     return {headers:rows[0],rows:rows.slice(1),sheet:"CSV"};
   }
   if(!/\.xlsx$/i.test(file.name))throw new Error("Choisissez un fichier .xlsx ou .csv.");
@@ -241,7 +239,7 @@ async function bulkReadExcel(file) {
   const path=target.startsWith("/")?target.slice(1):"xl/"+target.replace(/^\.\//,"");
   const sheet=bulkReadXml(zip.get(path)||zip.get("xl/worksheets/sheet1.xml")||"");
   const shared=zip.has("xl/sharedStrings.xml")?bulkXmlElements(bulkReadXml(zip.get("xl/sharedStrings.xml")),"si").map(si=>bulkXmlElements(si,"t").map(t=>t.textContent||"").join("")):[];
-  const rows=bulkXmlElements(sheet,"row").slice(0,10002).map(row=>{
+  const rows=bulkXmlElements(sheet,"row").map(row=>{
     const values=[];
     bulkXmlElements(row,"c").forEach(cell=>{
       const idx=bulkCellColumn(cell.getAttribute("r"));
@@ -253,7 +251,6 @@ async function bulkReadExcel(file) {
     return values;
   }).filter(row=>row.some(v=>String(v??"").trim()));
   if(rows.length<2)throw new Error("La première feuille ne contient pas de données.");
-  if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
   return {headers:rows[0],rows:rows.slice(1),sheet:sheets[0].getAttribute("name")||"Feuille 1"};
 }
 function bulkAutoMapping(headers,mode="city",rows=[]) {
@@ -298,7 +295,7 @@ function bulkExcelPanel() {
   const policies=bulkColumnPolicies(state.mapping,state.columnPolicies);
   const map=state.headers.length?'<section class="bulk-contact-card"><h4>Associer les colonnes</h4><p>Les colonnes-clés servent au rapprochement. Chaque colonne possède deux menus : le champ de destination, puis l’action « Ignorer / Remplir si différent / Remplir si vide ». Pour une adresse complète, choisissez « Adresse complète (numéro et rue) ».</p><div class="bulk-contact-columns">'+state.headers.map((header,i)=>'<label><strong>'+bulkEscape(header||"Colonne "+(i+1))+'</strong><small>'+bulkEscape(state.rows[0]?.[i]??"")+'</small><span class="bulk-contact-field-label">Champ à associer</span><select data-bulk-column="'+i+'">'+bulkOptions(fields,state.mapping[i]||"")+'</select><span class="bulk-contact-field-label">Action sur la fiche</span><select data-bulk-policy="'+i+'" aria-label="Action pour '+attr(header||("colonne "+(i+1)))+'" '+(!state.mapping[i]||state.mapping[i].startsWith("match_")?"disabled":"")+'>'+bulkOptions([["ignore","Ignorer"],["overwrite","Remplir si différent mais non vide"],["empty","Remplir si vide"]],policies[i])+'</select></label>').join("")+'</div></section>':"";
   const preview=state.preview&&state.mode==="excel"?bulkPreviewHtml(state.preview):"";
-  return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV. Le fichier est analysé dans votre navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
+  return '<div class="bulk-contact-card"><h4>1. Fichier de mise à jour</h4><p>Excel (.xlsx), première feuille, ou CSV, sans limite de taille ou de nombre de lignes fixée par le module. Les très gros fichiers peuvent nécessiter davantage de mémoire et de temps dans le navigateur. Vérifiez les correspondances avant d’appliquer.</p><label class="contact-dropzone">↑ Choisir un fichier .xlsx ou .csv<input data-bulk-file type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></label>'+
     (state.file?'<p><strong>'+bulkEscape(state.file.name)+'</strong> · '+bulkEscape(state.sheet)+' · '+state.rows.length+' ligne(s)</p>':"")+'</div>'+
     (state.headers.length?'<section class="bulk-contact-card"><h4>2. Critère de rapprochement</h4><label>Identification par <select data-bulk-match>'+bulkOptions([["city","Nom + prénom + commune"],["birth","Nom + prénom + date de naissance"]],state.matchMode)+'</select></label><p>Les correspondances ambiguës et les doublons sont ignorés.</p><label class="check-line"><input type="checkbox" data-bulk-create '+(state.createMissing?"checked":"")+' /> Créer les fiches sans correspondance et renseigner leurs colonnes</label></section>':"")+
     (state.headers.length?bulkImportKeywordPanel():"")+map+(state.headers.length?'<button type="button" class="primary-action" data-bulk-preview>Prévisualiser les changements</button>':"")+preview;
