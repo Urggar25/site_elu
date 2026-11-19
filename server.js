@@ -4,7 +4,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname);
 const port = Number(process.env.PORT || 4173);
-const publicFiles = new Set(["/index.html", "/styles.css", "/app.js"]);
+const publicFiles = new Set(["/index.html", "/styles.css", "/app.js", "/bulk-contact-update.js", "/bulk-contact-update.css"]);
 const publicDirectories = ["/assets/"];
 
 const types = {
