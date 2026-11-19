@@ -17,6 +17,7 @@ const context={
   contactKeywordValues:contact=>[...(contact.keywords||[]),...(contact.tags||[])],
   isDeathKeyword:value=>String(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="deces",
   parseContactImportValue:(raw,field)=>field.type==="text"?raw:raw,
+  normalizeContactRecord:(contact,ids)=>{let id="CREATED_"+ids.size;while(ids.has(id))id+="_2";contact.id=id;ids.add(id);return contact;},
   document:undefined
 };
 vm.createContext(context);
@@ -52,4 +53,33 @@ const identityUpdate=evaluate([["Dupont","Jean","02/01/1980","Jeanne"]],["match_
 assert.equal(identityUpdate.items[0].changes.firstName,"Jeanne");
 assert.equal(context.bulkDate("45292"),"2024-01-01");
 assert.equal(context.bulkDate("02/01/1980"),"1980-01-02");
-console.log("Mise à jour de fiches : 12 vérifications OK");
+
+const options={createMissing:true,allContacts:[first,second],policies:["ignore","ignore","ignore","overwrite","empty"]};
+const unknown=evaluate([["Martin","Alice","Luxeuil-les-Bains","4 rue du brun","0601010101"]],["match_lastName","match_firstName","match_city","address_auto","phone"],"city",[],options);
+assert.equal(unknown.creates.length,1);
+assert.equal(unknown.creates[0].contact.firstName,"Alice");
+assert.equal(unknown.creates[0].contact.city,"Luxeuil-les-Bains");
+assert.equal(unknown.creates[0].contact.streetNumber,"4");
+assert.equal(unknown.creates[0].contact.streetName,"rue du brun");
+assert.equal(unknown.creates[0].contact.streetNameFull,"rue du brun");
+assert.equal(unknown.creates[0].contact.phone,"0601010101");
+const secondAddress=evaluate([["Martin","Alice","Luxeuil-les-Bains","5 allée du berneuil",""]],["match_lastName","match_firstName","match_city","address_auto","phone"],"city",[],options);
+assert.equal(secondAddress.creates[0].contact.streetNumber,"5");
+assert.equal(secondAddress.creates[0].contact.streetName,"allée du berneuil");
+const outside=evaluate([["Dupont","Jean","Paris","x"]],["match_lastName","match_firstName","match_city","phone"],"city",[],options);
+assert.equal(outside.creates.length,0,"An existing contact outside scope should not be recreated");
+assert.equal(outside.errors.outsideScope,1);
+const duplicateNew=evaluate([["Martin","Alice","Paris","x"],["Martin","Alice","Paris","y"]],["match_lastName","match_firstName","match_city","phone"],"city",[],options);
+assert.equal(duplicateNew.creates.length,0);
+assert.equal(duplicateNew.errors.duplicate,2);
+const overwrite=evaluate([["Dupont","Jean","02/01/1980","nouveau"]],["match_lastName","match_firstName","match_birthDate","phone"],"birth",[first,second],{policies:["ignore","ignore","ignore","overwrite"]});
+assert.equal(overwrite.items[0].changes.phone,"nouveau");
+const fillIfEmpty=evaluate([["Dupont","Jean","02/01/1980","nouveau"]],["match_lastName","match_firstName","match_birthDate","phone"],"birth",[first,second],{policies:["ignore","ignore","ignore","empty"]});
+assert.equal(fillIfEmpty.items.length,0);
+const ignore=evaluate([["Dupont","Jean","02/01/1980","nouveau"]],["match_lastName","match_firstName","match_birthDate","phone"],"birth",[first,second],{policies:["ignore","ignore","ignore","ignore"],createMissing:true});
+assert.equal(ignore.items.length,0);
+assert.deepEqual(Array.from(context.bulkColumnPolicies(["match_firstName","phone"],["overwrite","empty"])),["ignore","empty"]);
+assert.equal(context.bulkAddressParts("12 bis avenue de la Liberté").number,"12 bis");
+assert.equal(context.bulkAddressParts("5 allée du berneuil").street,"allée du berneuil");
+
+console.log("Mise à jour de fiches : correspondances, créations, adresses et politiques OK");
