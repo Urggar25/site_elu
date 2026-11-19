@@ -73,7 +73,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
   const keys=bulkColumns([],mode,mapping),fields=new Map(bulkEligibleFields().map(f=>[f.id,f]));
   const policies=bulkColumnPolicies(mapping,options.policies||[]);
   const updates=mapping.map((id,i)=>(id==="address_auto"||fields.has(id))&&policies[i]!=="ignore"?{col:i,id,policy:policies[i]}:null).filter(Boolean);
-  if(!updates.length)throw new Error("Associez au moins une colonne à renseigner avec une action active.");
+  if(!updates.length&&!options.createMissing)throw new Error("Associez au moins une colonne à renseigner avec une action active.");
   if(new Set(updates.map(item=>item.id)).size!==updates.length)throw new Error("Un même champ est associé à plusieurs colonnes.");
   if(updates.some(item=>item.id==="address_auto")&&updates.some(item=>["streetNumber","streetName","streetNameFull"].includes(item.id)))throw new Error("Ne combinez pas l'adresse complète et ses colonnes séparées.");
   const allContacts=options.allContacts||scopeContacts,index=new Map(),globalIndex=new Map();
@@ -195,9 +195,16 @@ async function bulkReadExcel(file) {
   if(rows.length>10001)throw new Error("Maximum 10 000 lignes par opération.");
   return {headers:rows[0],rows:rows.slice(1),sheet:sheets[0].getAttribute("name")||"Feuille 1"};
 }
-function bulkAutoMapping(headers) {
+function bulkAutoMapping(headers,mode="city") {
   const aliases=contactImportAliases();
-  return headers.map(h=>{const key=slugify(h).replace(/-/g,"");const id=aliases[key]||(key==="commune"||key==="municipalite"?"city":"");return ["lastName","firstName","city","birthDate"].includes(id)?"match_"+id:id;});
+  const chosen=mode==="birth"?"birthDate":"city";
+  return headers.map(header=>{
+    const key=slugify(header).replace(/-/g,"");
+    const addressAliases=new Set(["adresse","adressecomplete","adressepostale","adressevoie","numerointeretnomderue"]);
+    if(addressAliases.has(key))return "address_auto";
+    const id=aliases[key]||(key==="commune"||key==="municipalite"?"city":"");
+    return ["lastName","firstName",chosen].includes(id)?"match_"+id:id;
+  });
 }
 function bulkSelectedTags(root,name) {
   return [...root.querySelectorAll('input[name="'+name+'"]:checked')].map(input=>input.value);
@@ -299,14 +306,19 @@ if(typeof document!=="undefined"){
       bulkContactUpdate.error="";bulkContactUpdate.preview=null;bulkContactUpdate.file=null;
       try {
         const sheet=await bulkReadExcel(file);
-        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers),columnPolicies:[]});
+        Object.assign(bulkContactUpdate,{file,headers:sheet.headers,rows:sheet.rows,sheet:sheet.sheet,mapping:bulkAutoMapping(sheet.headers,bulkContactUpdate.matchMode),columnPolicies:[]});
       } catch(error) {bulkContactUpdate.error=error.message||"Lecture impossible.";}
       renderAdmin();return;
     }
     if(t.matches("[data-bulk-column]")){bulkContactUpdate.mapping[Number(t.dataset.bulkColumn)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-policy]")){bulkContactUpdate.columnPolicies[Number(t.dataset.bulkPolicy)]=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-create]")){bulkContactUpdate.createMissing=t.checked;bulkContactUpdate.preview=null;renderAdmin();return;}
-    if(t.matches("[data-bulk-match]")){bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
+    if(t.matches("[data-bulk-match]")){
+      const former=bulkContactUpdate.matchMode==="birth"?"birthDate":"city";
+      const chosen=t.value==="birth"?"birthDate":"city";
+      bulkContactUpdate.mapping=bulkContactUpdate.mapping.map(id=>id==="match_"+former?former:id===chosen?"match_"+chosen:id);
+      bulkContactUpdate.matchMode=t.value;bulkContactUpdate.preview=null;renderAdmin();return;
+    }
     if(t.matches("[data-bulk-scope]")){bulkContactUpdate.scope=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-list]")){bulkContactUpdate.listId=t.value;bulkContactUpdate.preview=null;renderAdmin();return;}
     if(t.matches("[data-bulk-tag-new]")){bulkContactUpdate.tagNew=t.value;bulkContactUpdate.preview=null;return;}
