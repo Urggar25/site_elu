@@ -1,5 +1,5 @@
 /* Mise à jour de fiches — prévisualisation obligatoire, aucune création ni fusion automatique. */
-const bulkContactUpdate = { previewLoading: false, mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, createMissing: true, columnPolicies: [], importTagIds: [], importTagNew: "", busy: false, error: "", lastResult: "" };
+const bulkContactUpdate = { previewLoading: false, mode: "excel", file: null, headers: [], rows: [], sheet: "", mapping: [], matchMode: "city", scope: "all", listId: "", preview: null, createMissing: true, columnPolicies: [], importTagIds: [], importTagNew: "", ambiguityResolutions: {}, ambiguityPage: 0, busy: false, error: "", lastResult: "" };
 
 function bulkNormalize(value) {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[’']/g," ").replace(/[^a-z0-9]+/g," ").trim().replace(/\s+/g," ");
@@ -62,8 +62,12 @@ function bulkScopeContacts(scope, listId) {
 function bulkAddressParts(input) {
   const raw=String(input??"").trim().replace(/\s+/g," ");
   if(!raw)return {number:"",street:""};
-  const match=raw.match(/^(\d{1,5})(?:\s*[-,]?\s*(bis|ter|quater|[A-Z]))?(?:\s*[,.-]?\s+|\s*,\s*)(.+)$/i);
-  return match ? {number:match[1]+(match[2]?" "+match[2].toLowerCase():""),street:match[3].trim()} : {number:"",street:raw};
+  const match=raw.match(/^(\d{1,5})(?:\s*[-,]?\s*(bis|ter|quater|[A-Z]))?(?:[\s,.-]+(.+))?$/i);
+  return match ? {number:match[1]+(match[2]?" "+match[2].toLowerCase():""),street:String(match[3]||"").trim()} : {number:"",street:raw};
+}
+function bulkStreetSuffix(value) {return /^(?:[a-z]|bis|ter|quater)$/i.test(String(value||"").trim());}
+function bulkAmbiguousChoice(contact) {
+  return {id:contact.id,name:contactDisplayName(contact),city:String(contact.city||""),birth:String(contact.birthDate||""),address:[contact.streetNumber,contact.streetNameFull||contact.streetName].filter(Boolean).join(" ")};
 }
 function bulkColumnPolicies(mapping,policies=[]) {
   return mapping.map((id,i)=>id.startsWith("match_")||!id?"ignore":(["ignore","overwrite","empty"].includes(policies[i])?policies[i]:"overwrite"));
@@ -88,7 +92,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
   });
   scopeContacts.forEach(c=>add(index,c));
   allContacts.filter(c=>c.entityType!=="institution").forEach(c=>add(globalIndex,c));
-  const items=[],creates=[],matchedUnchanged=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
+  const items=[],creates=[],matchedUnchanged=[],ambiguous=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
   const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
   const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
   const usedIds=new Set(allContacts.map(c=>c.id));
@@ -99,16 +103,21 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
     if(!key){reject("Identité incomplète","invalid");return;}
     if(occurrences.get(key)>1){reject("Identité dupliquée dans le fichier","duplicate");return;}
     const matches=index.get(key)||[];
-    if(matches.length>1){reject("Plusieurs fiches correspondent","ambiguous");return;}
+    const selectedId=options.resolutions?.[line];
+    if(matches.length>1&&!matches.some(c=>c.id===selectedId)){
+      ambiguous.push({row:line,name:[String(row[keys.lastName]||"").trim(),bulkFirstGivenName(row[keys.firstName])].filter(Boolean).join(" "),city:mode==="city"?String(row[keys.city]||""):"",birth:mode==="birth"?bulkDate(row[keys.birthDate]):"",choices:matches.map(bulkAmbiguousChoice)});
+      reject("Plusieurs fiches correspondent","ambiguous");return;
+    }
     if(!matches.length&&(globalIndex.get(key)||[]).length){reject("Fiche existante hors du périmètre choisi","outsideScope");return;}
     const creating=!matches.length;
+    const chosen=matches.length>1?matches.find(c=>c.id===selectedId):matches[0];
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");return;}
     const original=creating?{
       id:"",firstName:bulkFirstGivenName(row[keys.firstName]),lastName:String(row[keys.lastName]??"").trim(),
       [mode==="birth"?"birthDate":"city"]:mode==="birth"?bulkDate(row[keys.birthDate]):String(row[keys.city]??"").trim(),
       keywords:[],tags:[],comments:[]
-    }:matches[0];
-    const candidate={...original};let invalid=false;
+    }:chosen;
+    const candidate={...original};let invalid=false,addressSuffix="";
     for(const update of updates){
       const raw=String(row[update.col]??"").trim();
       if(!raw)continue;
@@ -119,11 +128,13 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
         bulkApplyValue(candidate,"streetNameFull",address.street,update.policy);
         continue;
       }
+      if(update.id==="streetName"&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
       const field=fields.get(update.id);
       const value=field.id==="firstName"?bulkFirstGivenName(raw):field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
       if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
       bulkApplyValue(candidate,field.id,value,update.policy);
     }
+    if(addressSuffix&&/^\d{1,5}$/.test(String(candidate.streetNumber||"").trim()))bulkApplyValue(candidate,"streetNumber",String(candidate.streetNumber).trim()+" "+addressSuffix,"overwrite");
     if(invalid){reject("Valeur de colonne invalide","invalid");return;}
     if(Object.prototype.hasOwnProperty.call(candidate,"keywords")){
       const values=Array.isArray(candidate.keywords)?candidate.keywords:String(candidate.keywords||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
@@ -140,7 +151,7 @@ function bulkEvaluateExcel(rows,mapping,mode,scopeContacts,options={}) {
       else {errors.unchanged++;matchedUnchanged.push({id:original.id,row:line});}
     }
   });
-  return {items,creates,matchedUnchanged,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
+  return {items,creates,matchedUnchanged,ambiguous,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
 }
 function bulkPreviewYield(message) {
   const area=document.querySelector("[data-bulk-preview-status]");
@@ -167,7 +178,7 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
     if(j%2500===2499)await bulkPreviewYield("Indexation des contacts : "+(j+1)+" / "+allContacts.length);
   }
   await bulkPreviewYield("Préparation des "+rows.length+" lignes…");
-  const items=[],creates=[],matchedUnchanged=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
+  const items=[],creates=[],matchedUnchanged=[],ambiguous=[],rejected=[],errors={unmatched:0,ambiguous:0,duplicate:0,unchanged:0,invalid:0,outsideScope:0};
   const rowKeys=rows.map(row=>bulkKey(row[keys.lastName],row[keys.firstName],row[keys[mode==="birth"?"birthDate":"city"]],mode));
   const occurrences=new Map();rowKeys.forEach(key=>{if(key)occurrences.set(key,(occurrences.get(key)||0)+1);});
   const usedIds=new Set(allContacts.map(c=>c.id));
@@ -180,16 +191,21 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
     if(!key){reject("Identité incomplète","invalid");continue;}
     if(occurrences.get(key)>1){reject("Identité dupliquée dans le fichier","duplicate");continue;}
     const matches=index.get(key)||[];
-    if(matches.length>1){reject("Plusieurs fiches correspondent","ambiguous");continue;}
+    const selectedId=options.resolutions?.[line];
+    if(matches.length>1&&!matches.some(c=>c.id===selectedId)){
+      ambiguous.push({row:line,name:[String(row[keys.lastName]||"").trim(),bulkFirstGivenName(row[keys.firstName])].filter(Boolean).join(" "),city:mode==="city"?String(row[keys.city]||""):"",birth:mode==="birth"?bulkDate(row[keys.birthDate]):"",choices:matches.map(bulkAmbiguousChoice)});
+      reject("Plusieurs fiches correspondent","ambiguous");continue;
+    }
     if(!matches.length&&(globalIndex.get(key)||[]).length){reject("Fiche existante hors du périmètre choisi","outsideScope");continue;}
     const creating=!matches.length;
+    const chosen=matches.length>1?matches.find(c=>c.id===selectedId):matches[0];
     if(creating&&!options.createMissing){reject("Aucune fiche correspondante","unmatched");continue;}
     const original=creating?{
       id:"",firstName:String(row[keys.firstName]??"").trim(),lastName:String(row[keys.lastName]??"").trim(),
       [mode==="birth"?"birthDate":"city"]:mode==="birth"?bulkDate(row[keys.birthDate]):String(row[keys.city]??"").trim(),
       keywords:[],tags:[],comments:[]
-    }:matches[0];
-    const candidate={...original};let invalid=false;
+    }:chosen;
+    const candidate={...original};let invalid=false,addressSuffix="";
     for(const update of updates){
       const raw=String(row[update.col]??"").trim();
       if(!raw)continue;
@@ -200,11 +216,13 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
         bulkApplyValue(candidate,"streetNameFull",address.street,update.policy);
         continue;
       }
+      if(update.id==="streetName"&&bulkStreetSuffix(raw)){addressSuffix=raw.trim().toLowerCase();continue;}
       const field=fields.get(update.id);
       const value=field.type==="date"?bulkDate(raw):parseContactImportValue(raw,field);
       if((field.type==="date"&&!value)||(field.type==="number"&&!Number.isFinite(value))||(field.type==="boolean"&&!/^(1|0|oui|non|yes|no|true|false|vrai|faux|x)$/i.test(raw))){invalid=true;break;}
       bulkApplyValue(candidate,field.id,value,update.policy);
     }
+    if(addressSuffix&&/^\d{1,5}$/.test(String(candidate.streetNumber||"").trim()))bulkApplyValue(candidate,"streetNumber",String(candidate.streetNumber).trim()+" "+addressSuffix,"overwrite");
     if(invalid){reject("Valeur de colonne invalide","invalid");continue;}
     if(Object.prototype.hasOwnProperty.call(candidate,"keywords")){
       const values=Array.isArray(candidate.keywords)?candidate.keywords:String(candidate.keywords||"").split(/[,;]/).map(v=>v.trim()).filter(Boolean);
@@ -222,7 +240,7 @@ async function bulkEvaluateExcelProgressive(rows,mapping,mode,scopeContacts,opti
     }
   }
   await bulkPreviewYield("Finalisation : "+rows.length+" lignes analysées");
-  return {items,creates,matchedUnchanged,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
+  return {items,creates,matchedUnchanged,ambiguous,rejected,errors,sourceRows:rows.length,scopeCount:scopeContacts.length};
 }
 function bulkImportKeywordSelection(existing=[],newText="") {
   const raw=[...(Array.isArray(existing)?existing:[]),...String(newText||"").split(/[,;\n]/)];
