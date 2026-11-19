@@ -163,7 +163,7 @@ async function repairScanContacts(){
           name:contactDisplayName(contact),value,suggestion,confidence,
           type:value.includes("�")?"Caractère de remplacement":"Mauvais décodage UTF-8"};
         state.issues.push(issue);
-        if(confidence==="automatic")state.selections.add(issue.key);
+        if(suggestion)state.selections.add(issue.key);
       }
       if(i%3000===2999||i===contacts.length-1){
         state.scanned=i+1;
@@ -173,8 +173,8 @@ async function repairScanContacts(){
       }
     }
     state.groups=repairBuildGroups(state.issues);
-    for(const group of state.groups)if(group.confidence==="automatic")state.groupSelections.add(group.key);
-    state.message=state.issues.length+" champ(s) suspects répartis en "+state.groups.length+" groupes : une seule correction peut s’appliquer à toutes les occurrences identiques.";
+    for(const group of state.groups)if(group.suggestion)state.groupSelections.add(group.key);
+    state.message=state.issues.length+" champ(s) suspects répartis en "+state.groups.length+" groupes. Les corrections automatiques et les suggestions « À vérifier » sont présélectionnées ; seules les valeurs sans proposition nécessitent une saisie.";
   }catch(error){state.error=error.message||"Analyse impossible.";}
   finally{state.scanning=false;renderAdmin();}
 }
@@ -212,7 +212,7 @@ function renderEncodingRepair(){
     (s.error?'<p class="bulk-contact-error" role="alert">'+repairSafeText(s.error)+'</p>':"")+
     (s.issues.length?'<section class="bulk-contact-card"><h4>2. Vérifier les propositions</h4>'+
     '<p>'+s.issues.length.toLocaleString("fr-FR")+' champs suspects · '+stats.automatic+' décodages automatiques · '+stats.review+' suggestions à valider · '+stats.unresolved+' sans correction sûre.</p>'+
-    '<p>Une même valeur incorrecte peut apparaître sur des milliers de fiches. En mode « Par valeur », corrigez-la une fois pour toutes les occurrences. Pour les caractères « � », vérifiez la correction avec une source fiable.</p>'+
+    '<p>Les corrections automatiques et les suggestions « À vérifier » sont déjà cochées. Renseignez uniquement les valeurs sans proposition. Une correction de groupe s’applique à toutes ses occurrences. Avant de confirmer, contrôlez les propositions incertaines et décochez celles qui sont erronées.</p>'+
     '<div class="repair-view-choice"><label><input type="radio" name="repairView" value="groups" '+(s.view==="groups"?"checked":"")+' /> Par valeur identique ('+s.groups.length+' groupes)</label><label><input type="radio" name="repairView" value="individual" '+(s.view==="individual"?"checked":"")+' /> Fiche par fiche</label></div>'+
     '<div class="repair-toolbar"><label>Filtrer <select data-repair-mode><option value="all" '+(s.mode==="all"?"selected":"")+'>Tous</option><option value="automatic" '+(s.mode==="automatic"?"selected":"")+'>Décodage automatique</option><option value="manual" '+(s.mode==="manual"?"selected":"")+'>Révision manuelle</option><option value="selected" '+(s.mode==="selected"?"selected":"")+'>Sélectionnés</option></select></label>'+
     '<label>Rechercher <input data-repair-query value="'+attr(s.query)+'" placeholder="Nom, ville, valeur…" /></label></div>'+
