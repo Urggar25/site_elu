@@ -32,6 +32,25 @@ function repairMojibake(input){
   return result;
 }
 
+function repairReplaceCorruptionWithE(value){
+  return String(value).replace(/�|Ã.|Â[\u0080-\u00BF]|â[€œ„].?/gu,"é");
+}
+function repairSelectAllAsE(){
+  const s=encodingRepairState;
+  if(s.busy||s.scanning||!s.issues.length)return;
+  if(!confirm("Remplacer tous les segments d’encodage suspects par « é » ? Les propositions actuelles seront remplacées, sans enregistrer les données à ce stade."))return;
+  for(const group of s.groups){
+    const replacement=repairReplaceCorruptionWithE(group.value);
+    if(replacement!==group.value){s.groupOverrides.set(group.key,replacement);s.groupSelections.add(group.key);}
+  }
+  for(const issue of s.issues){
+    const replacement=repairReplaceCorruptionWithE(issue.value);
+    if(replacement!==issue.value){s.overrides.set(issue.key,replacement);s.selections.add(issue.key);}
+  }
+  s.backupDone=false;s.backupSignature="";s.page=0;
+  s.message="Remplacement par « é » préparé. Vérifiez les valeurs puis exportez une nouvelle sauvegarde avant d’appliquer.";
+  renderAdmin();
+}
 function repairCandidateKey(value){
   return String(value||"").normalize("NFC").toLocaleLowerCase("fr");
 }
@@ -213,6 +232,7 @@ function renderEncodingRepair(){
     (s.issues.length?'<section class="bulk-contact-card"><h4>2. Vérifier les propositions</h4>'+
     '<p>'+s.issues.length.toLocaleString("fr-FR")+' champs suspects · '+stats.automatic+' décodages automatiques · '+stats.review+' suggestions à valider · '+stats.unresolved+' sans correction sûre.</p>'+
     '<p>Les corrections automatiques et les suggestions « À vérifier » sont déjà cochées. Renseignez uniquement les valeurs sans proposition. Une correction de groupe s’applique à toutes ses occurrences. Avant de confirmer, contrôlez les propositions incertaines et décochez celles qui sont erronées.</p>'+
+    '<button type="button" class="secondary-action" data-repair-all-e '+(s.busy||s.scanning?"disabled":"") +'>Remplacer tous les caractères corrompus par « é »</button><p><small>Remplacement volontaire de tous les segments suspects par « é », même si la lettre initiale était différente. Vérifiez avant application.</small></p>'+
     '<div class="repair-view-choice"><label><input type="radio" name="repairView" value="groups" '+(s.view==="groups"?"checked":"")+' /> Par valeur identique ('+s.groups.length+' groupes)</label><label><input type="radio" name="repairView" value="individual" '+(s.view==="individual"?"checked":"")+' /> Fiche par fiche</label></div>'+
     '<div class="repair-toolbar"><label>Filtrer <select data-repair-mode><option value="all" '+(s.mode==="all"?"selected":"")+'>Tous</option><option value="automatic" '+(s.mode==="automatic"?"selected":"")+'>Décodage automatique</option><option value="manual" '+(s.mode==="manual"?"selected":"")+'>Révision manuelle</option><option value="selected" '+(s.mode==="selected"?"selected":"")+'>Sélectionnés</option></select></label>'+
     '<label>Rechercher <input data-repair-query value="'+attr(s.query)+'" placeholder="Nom, ville, valeur…" /></label></div>'+
@@ -307,9 +327,10 @@ async function repairApplyChanges(){
 }
 if(typeof document!=="undefined"){
  document.addEventListener("click",async event=>{
-   const trigger=event.target.closest("[data-repair-scan],[data-repair-backup],[data-repair-apply],[data-repair-page]");
+   const trigger=event.target.closest("[data-repair-scan],[data-repair-backup],[data-repair-apply],[data-repair-page],[data-repair-all-e]");
    if(!trigger)return;
-   if(trigger.matches("[data-repair-scan]"))await repairScanContacts();
+   if(trigger.matches("[data-repair-all-e]"))repairSelectAllAsE();
+   else if(trigger.matches("[data-repair-scan]"))await repairScanContacts();
    else if(trigger.matches("[data-repair-backup]"))repairExportBackup();
    else if(trigger.matches("[data-repair-apply]"))await repairApplyChanges();
    else if(trigger.matches("[data-repair-page]")){encodingRepairState.page=Math.max(0,encodingRepairState.page+Number(trigger.dataset.repairPage));renderAdmin();}
