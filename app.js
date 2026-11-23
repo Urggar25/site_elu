@@ -3645,7 +3645,7 @@ function savedListPreview(item,searches) {
 function savedSearchCivility(contact) {
   const value = String(contact.gender ?? contact.genre ?? "").trim().toLowerCase();
   if (value === "2" || ["m", "m.", "monsieur"].includes(value)) return "M.";
-  if (value === "1" || ["f", "mme", "mme.", "madame"].includes(value)) return "Mme.";
+  if (value === "1" || ["f", "mme", "mme.", "madame"].includes(value)) return "Mme";
   return "";
 }
 
@@ -3682,17 +3682,8 @@ function savedSearchExportPreview(contacts) {
     if (!groups.has(addressKey)) groups.set(addressKey, []);
     groups.get(addressKey).push(contact);
   }
-  const rows = [...groups.values()].map((group) => {
-    const first = group[0];
-    const unique = (field) => [...new Set(group.map(field).map((v) => String(v || "").trim()).filter(Boolean))].join(" ; ");
-    return [
-      unique(savedSearchCivility),
-      unique((c) => c.firstName), unique((c) => c.lastName || c.usageName),
-      [first.streetNumber, first.streetNameFull || first.streetName].filter(Boolean).join(" ").trim(),
-      first.postalCode || "", first.city || "",
-      unique((c) => c.mobile || c.phone), unique((c) => c.email)
-    ];
-  });
+  // Keep exactly one contact per address; never concatenate several people's details.
+  const rows = [...groups.values()].map(group => savedSearchPersonExportRow(group[0]));
   return {
     rows, uniquePeople: uniquePeople.size,
     personDuplicates: contacts.length - uniquePeople.size,
@@ -3790,7 +3781,7 @@ function exportSavedContactPeople(id) {
   const validated=savedListPreview(item,list);
   if(validated.error){showToast(validated.error);return;}
   const contacts=validated.contacts,headers=contactFields().map(f=>f.id);
-  const rows=[headers,...contacts.map(c=>headers.map(key=>Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
+  const rows=[headers,...contacts.map(c=>headers.map(key=>key==="gender"?savedSearchCivility(c):Array.isArray(c[key])?c[key].join(", "):c[key]??""))];
   downloadFile("personnes-"+slugify(item.name)+".xlsx",participantWorkbookBytes(rows),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   showToast(contacts.length+" personnes exportées, une ligne par fiche.");
 }
